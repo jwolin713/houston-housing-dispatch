@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "mcp__plugin_compound-engineering_context7__resolve-library-id",
+      "mcp__plugin_compound-engineering_context7__query-docs",
+      "Skill(compound-engineering:deepen-plan)",
+      "Skill(compound-engineering:deepen-plan:*)",
+      "Skill(compound-engineering:\\\\workflows:review)",
+      "Skill(compound-engineering:\\\\workflows:review:*)",
+      "Skill(compound-engineering:\\\\workflows:work)",
+      "Skill(compound-engineering:\\\\workflows:work:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
