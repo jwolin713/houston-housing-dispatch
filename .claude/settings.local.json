@@ -12,7 +12,11 @@
       "Skill(compound-engineering:\\\\workflows:work:*)",
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(for dir in src/email src/curation src/ai src/generation src/publishers src/auth src/api src/api/routes src/notifications src/workflows src/scheduler src/monitoring)",
+      "Bash(do touch \"$dir/__init__.py\")",
+      "Bash(done)"
     ]
   }
 }
