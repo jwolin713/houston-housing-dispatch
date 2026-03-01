@@ -172,6 +172,7 @@ Focus on unique features, good value, and architectural interest."""
         self,
         listing: dict,
         voice_examples: list[str],
+        avoid_phrases: list[str] | None = None,
     ) -> str:
         """
         Generate a newsletter description for a listing.
@@ -179,35 +180,73 @@ Focus on unique features, good value, and architectural interest."""
         Args:
             listing: Dict with listing details
             voice_examples: Example descriptions to match style
+            avoid_phrases: List of generic phrases to avoid
 
         Returns:
             Generated description text
         """
         examples_text = "\n\n".join(f"Example {i+1}:\n{ex}" for i, ex in enumerate(voice_examples))
 
+        # Build avoid phrases string
+        avoid_str = ""
+        if avoid_phrases:
+            avoid_str = f"\n\nPHRASES TO NEVER USE: {', '.join(avoid_phrases[:15])}"
+
+        neighborhood = listing.get('neighborhood', 'N/A')
+        neighborhood_context = ""
+        if neighborhood and neighborhood != 'N/A':
+            neighborhood_context = f"""
+NEIGHBORHOOD CONTEXT REQUIREMENT:
+You MUST include context about {neighborhood}. What's it like to live there?
+What's nearby? What's the character of the streets? This is non-negotiable."""
+
         prompt = f"""Write a newsletter description for this Houston listing.
 
-Listing details:
+LISTING DETAILS:
 - Address: {listing.get('address')}
 - Price: ${listing.get('price', 0):,}
 - Beds: {listing.get('bedrooms')} / Baths: {listing.get('bathrooms')}
 - Sqft: {listing.get('sqft', 'N/A')}
 - Year built: {listing.get('year_built', 'N/A')}
-- Neighborhood: {listing.get('neighborhood', 'N/A')}
+- Neighborhood: {neighborhood}
 - Type: {listing.get('property_type', 'N/A')}
 - HAR description: {listing.get('description_raw', 'N/A')}
+{neighborhood_context}
 
-Match this writing style (2-3 sentences, observational, insider tone):
+REQUIREMENTS:
+1. Lead with what makes this property notable or interesting
+2. Include at least ONE specific, memorable detail (architectural feature, practical quirk, honest observation)
+3. Connect to the neighborhood—what's it like to actually live there?
+4. 2-4 sentences, observational insider tone
+
+EXAMPLE DESCRIPTIONS TO MATCH:
 
 {examples_text}
+{avoid_str}
 
-Write the description now (just the description, no header):"""
+Write the description now (just the description, no header or price):"""
 
         system = """You are writing for the Houston Housing Dispatch newsletter.
-Your voice is conversational and knowledgeable - like a friend who really knows Houston real estate.
-Focus on what makes properties interesting: unique features, neighborhood context, value.
-Avoid generic real estate speak like "won't last long" or "stunning."
-Be specific and observational."""
+
+VOICE: Knowledgeable Houston insider—like Curbed, Brownstoner, or local food critics
+like Alison Cook and Erica Chen. Someone who's watched neighborhoods evolve and
+knows every street in the Inner Loop.
+
+PHILOSOPHY: "Interesting houses that can become long-lasting homes"
+Not investment returns or flipping potential. Character, quality, and fit.
+
+TONE:
+- Conversational insider (like texts from a friend who knows Houston real estate)
+- Observational (notice details others miss)
+- Practical (parking, layout, condition, what actually matters)
+- Light editorial wit (occasional commentary without snark)
+
+CRITICAL: Every description MUST include neighborhood context. Don't just describe
+the house—describe what it's like to live in that location.
+
+NEVER USE: "stunning," "gorgeous," "won't last long," "move-in ready," "must see,"
+"perfect for entertaining," "close to everything," "dream home," or any generic
+real estate agent speak."""
 
         return self.complete(prompt, system=system, max_tokens=500, temperature=0.8)
 
@@ -232,24 +271,144 @@ Be specific and observational."""
         min_price = min(prices) if prices else 0
         max_price = max(prices) if prices else 0
 
+        # Find notable properties for the intro
+        notable_properties = []
+        for listing in listings[:5]:
+            notable = f"{listing.get('neighborhood', 'Unknown')}: ${listing.get('price', 0):,}"
+            if listing.get('year_built'):
+                notable += f" ({listing.get('year_built')})"
+            notable_properties.append(notable)
+
         examples_text = "\n\n".join(f"Example {i+1}:\n{ex}" for i, ex in enumerate(voice_examples))
 
         prompt = f"""Write a newsletter intro paragraph for this week's Houston Housing Dispatch.
 
-This edition features:
+THIS EDITION FEATURES:
 - {len(listings)} properties
-- Neighborhoods: {', '.join(neighborhoods[:5])}
+- Neighborhoods: {', '.join(neighborhoods[:6])}
 - Price range: ${min_price:,} - ${max_price:,}
+- Notable listings: {'; '.join(notable_properties)}
 
-Match this intro style (2-3 sentences, sets context for the edition):
+REQUIREMENTS:
+1. Hook readers with what's interesting THIS week (not generic "great listings")
+2. Mention 2-3 specific neighborhoods or themes
+3. Set insider tone from the first sentence
+4. 2-3 sentences max
+
+EXAMPLE INTROS TO MATCH:
 
 {examples_text}
 
 Write the intro now (just the intro paragraph):"""
 
         system = """You are writing the opening paragraph for the Houston Housing Dispatch newsletter.
-Set the tone for what's in this edition - mention 2-3 neighborhoods or themes.
-Keep it brief (2-3 sentences) and conversational.
-Avoid generic openers like "This week we have great listings!" """
+
+VOICE: Knowledgeable Houston insider—like Curbed, Brownstoner, or local food critics.
+Someone readers trust to know which listings are actually worth their time.
+
+APPROACH:
+- Lead with what's notable or unusual about this week's mix
+- Reference specific neighborhoods with insider familiarity
+- Set expectations without being promotional
+- Conversational, not salesy—like a friend summarizing what's worth looking at
+
+NEVER START WITH:
+- "This week we have..."
+- "Check out these..."
+- "Welcome to..."
+- Any generic real estate opener"""
 
         return self.complete(prompt, system=system, max_tokens=300, temperature=0.8)
+
+    def edit_newsletter(
+        self,
+        content: str,
+        listings: list[dict],
+        avoid_phrases: list[str],
+    ) -> str:
+        """
+        Editorial pass to polish and unify newsletter content.
+
+        Full editorial control to rewrite descriptions, add transitions,
+        and ensure consistent insider voice throughout.
+
+        Args:
+            content: The raw newsletter content in markdown
+            listings: List of listing dicts (for factual validation reference)
+            avoid_phrases: List of generic phrases to eliminate
+
+        Returns:
+            Polished newsletter content
+        """
+        # Build immutable facts reference for the editor
+        immutable_facts = []
+        for listing in listings:
+            facts = {
+                "address": listing.get("address"),
+                "price": f"${listing.get('price', 0):,}",
+                "beds": listing.get("bedrooms"),
+                "baths": listing.get("bathrooms"),
+                "sqft": listing.get("sqft"),
+                "year_built": listing.get("year_built"),
+                "neighborhood": listing.get("neighborhood"),
+            }
+            immutable_facts.append(facts)
+
+        avoid_str = ", ".join(f'"{p}"' for p in avoid_phrases[:20])
+
+        prompt = f"""Edit this Houston Housing Dispatch newsletter draft.
+
+You have FULL EDITORIAL CONTROL to:
+- Rewrite listing descriptions to be more distinctive and insider-voiced
+- Add connecting sentences between neighborhood sections
+- Strengthen the intro paragraph
+- Improve flow and variety in sentence structure
+- Remove any generic real estate language
+
+IMMUTABLE FACTS (must preserve exactly):
+{immutable_facts}
+
+PHRASES TO ELIMINATE:
+{avoid_str}
+
+CURRENT DRAFT:
+{content}
+
+OUTPUT:
+Return the complete polished newsletter in markdown format.
+Every listing must still include its price, address, and key details.
+Add connecting sentences between neighborhood sections to create narrative flow."""
+
+        system = """You are the editor of Houston Housing Dispatch, a real estate newsletter
+with the voice of a knowledgeable Houston insider—think Curbed, Brownstoner, or
+local food critics like Alison Cook and Erica Chen.
+
+Your job is to polish this newsletter draft into a cohesive, engaging read.
+
+VOICE GUIDELINES:
+- Conversational insider tone—like a friend who knows Houston neighborhoods deeply
+- Observational and specific—notice details others miss
+- Practical focus—parking, layout, condition, what matters to buyers
+- Light editorial wit—occasional commentary without snark
+
+WHAT YOU CAN CHANGE:
+- Rewrite listing descriptions to be more distinctive
+- Add connecting sentences between neighborhood sections
+- Strengthen the intro to hook readers
+- Improve flow and variety in sentence structure
+- Remove any generic real estate language that slipped through
+
+WHAT YOU CANNOT CHANGE (these are factual and must appear exactly):
+- Prices (dollar amounts)
+- Addresses
+- Bedroom/bathroom counts
+- Square footage
+- Year built
+- HAR links
+- Neighborhood names
+
+CRITICAL: Create narrative flow between sections. The newsletter should feel like
+one cohesive piece, not a list of disconnected listings."""
+
+        logger.info("Running editorial pass on newsletter")
+        return self.complete(prompt, system=system, max_tokens=8000, temperature=0.7)
