@@ -83,11 +83,8 @@ class ApifyZillowClient:
         )
 
         run_input = {
-            "searchUrls": [
-                {"url": f"https://www.zillow.com/homes/{query}_rb/"}
-                for query in search_queries
-            ],
-            "maxItems": len(search_queries) * 3,
+            "addresses": search_queries,
+            "propertyStatus": "FOR_SALE",
         }
 
         run = self.client.actor(self.actor_id).call(
@@ -112,25 +109,40 @@ class ApifyZillowClient:
         """
         Parse a raw Apify result into a ZillowResult.
 
-        Handles varying output schemas from different Zillow actors.
+        Handles the maxcopell/zillow-detail-scraper output schema where
+        `address` is a dict with streetAddress/city/state/zipcode.
         """
-        address = (
-            item.get("address")
-            or item.get("streetAddress")
-            or item.get("addr", "")
-        )
+        # Skip invalid results (bad addresses)
+        if item.get("isValid") is False:
+            return ZillowResult(
+                success=False,
+                address=item.get("addressOrUrlFromInput", ""),
+                error=item.get("invalidReason", "Invalid address"),
+            )
+
+        # Address can be a dict or string depending on the actor
+        raw_address = item.get("address")
+        if isinstance(raw_address, dict):
+            parts = [
+                raw_address.get("streetAddress", ""),
+                raw_address.get("city", ""),
+                raw_address.get("state", ""),
+                raw_address.get("zipcode", ""),
+            ]
+            address = ", ".join(p for p in parts if p)
+        else:
+            address = raw_address or item.get("streetAddress", "")
 
         description = (
             item.get("description")
             or item.get("homeDescription")
-            or item.get("remarks")
             or ""
         )
 
         zillow_url = (
             item.get("url")
-            or item.get("detailUrl")
             or item.get("hdpUrl")
+            or item.get("detailUrl")
             or ""
         )
         if zillow_url and not zillow_url.startswith("http"):
