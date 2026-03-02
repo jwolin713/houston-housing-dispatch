@@ -1,7 +1,12 @@
-"""Property scoring algorithm for newsletter curation."""
+"""Property scoring algorithm for newsletter curation.
+
+Redesigned to prioritize editorial character over price. Rules serve as
+guardrails (max 20 points) while AI scoring drives selection (70/30 split).
+
+See: docs/brainstorms/2026-03-01-scoring-system-redesign-brainstorm.md
+"""
 
 from dataclasses import dataclass
-from typing import Optional
 
 import structlog
 
@@ -20,14 +25,13 @@ class NeighborhoodData:
 
 # Houston neighborhood price data (approximate medians)
 NEIGHBORHOOD_DATA: dict[str, NeighborhoodData] = {
-    # Premium neighborhoods
+    # Premium neighborhoods - strong editorial identity
     "River Oaks": NeighborhoodData(median_price=2_500_000, is_premium=True),
     "West University": NeighborhoodData(median_price=1_400_000, is_premium=True),
     "West U": NeighborhoodData(median_price=1_400_000, is_premium=True),
     "Tanglewood": NeighborhoodData(median_price=1_800_000, is_premium=True),
     "Memorial": NeighborhoodData(median_price=900_000, is_premium=True),
     "Bellaire": NeighborhoodData(median_price=700_000, is_premium=True),
-
     # Desirable inner loop neighborhoods
     "Heights": NeighborhoodData(median_price=650_000, is_premium=True),
     "Montrose": NeighborhoodData(median_price=600_000, is_premium=True),
@@ -37,7 +41,6 @@ NEIGHBORHOOD_DATA: dict[str, NeighborhoodData] = {
     "Midtown": NeighborhoodData(median_price=400_000, is_premium=False),
     "EaDo": NeighborhoodData(median_price=450_000, is_premium=False),
     "East Downtown": NeighborhoodData(median_price=450_000, is_premium=False),
-
     # Other desirable areas
     "Garden Oaks": NeighborhoodData(median_price=550_000, is_premium=False),
     "Oak Forest": NeighborhoodData(median_price=500_000, is_premium=False),
@@ -46,7 +49,6 @@ NEIGHBORHOOD_DATA: dict[str, NeighborhoodData] = {
     "Spring Branch": NeighborhoodData(median_price=400_000, is_premium=False),
     "Galleria": NeighborhoodData(median_price=350_000, is_premium=False),
     "Downtown": NeighborhoodData(median_price=350_000, is_premium=False),
-
     # Suburbs
     "Katy": NeighborhoodData(median_price=380_000, is_premium=False),
     "Sugar Land": NeighborhoodData(median_price=400_000, is_premium=False),
@@ -62,31 +64,31 @@ NEIGHBORHOOD_DATA: dict[str, NeighborhoodData] = {
 # Default for unknown neighborhoods
 DEFAULT_NEIGHBORHOOD_DATA = NeighborhoodData(median_price=400_000, is_premium=False)
 
-# Keywords that indicate interesting features
-POSITIVE_KEYWORDS = [
-    "pool", "renovated", "remodeled", "updated", "views", "corner lot",
-    "guest house", "garage apartment", "downtown views", "skyline",
-    "original hardwood", "chef's kitchen", "wine cellar", "elevator",
-    "smart home", "solar", "generator", "gated", "waterfront",
-    "acreage", "estate", "historic", "mid-century", "modern",
-]
-
 
 class ListingScorer:
-    """Scores listings for newsletter interest and curation."""
+    """Scores listings for newsletter curation.
 
-    def __init__(self, ai_weight: float = 0.4):
+    AI-primary scoring (default 70% AI, 30% rules). Rules serve as guardrails
+    only — max 20 points across neighborhood context, sanity checks, and a
+    small price bonus. The AI handles holistic editorial judgment.
+    """
+
+    def __init__(self, ai_weight: float = 0.7):
         """
         Initialize the scorer.
 
         Args:
-            ai_weight: How much to weight AI scores (0-1). Rule-based gets (1 - ai_weight).
+            ai_weight: Weight for AI scores (0-1). Rule-based gets (1 - ai_weight).
+                       Default 0.7 for AI-primary scoring.
         """
         self.ai_weight = ai_weight
 
-    def score(self, listing: Listing, ai_score: Optional[float] = None) -> float:
+    def score(self, listing: Listing, ai_score: float | None = None) -> float:
         """
         Calculate a composite score for a listing.
+
+        When AI score is available: final = (AI * 0.7) + (rules * 0.3)
+        When AI score is unavailable: final = rules only (max 20)
 
         Args:
             listing: The listing to score
@@ -95,17 +97,18 @@ class ListingScorer:
         Returns:
             Score from 0-100
         """
-        # Calculate rule-based score
         rule_score = self._calculate_rule_score(listing)
 
-        # Combine with AI score if available
         if ai_score is not None and self.ai_weight > 0:
+            # Scale rule score (0-20) to 0-100 for fair blending
+            rule_score_normalized = rule_score * 5.0  # 20 * 5 = 100
             final_score = (
-                rule_score * (1 - self.ai_weight) +
                 ai_score * self.ai_weight
+                + rule_score_normalized * (1 - self.ai_weight)
             )
         else:
-            final_score = rule_score
+            # No AI score — use rule score scaled to 0-100
+            final_score = rule_score * 5.0
 
         logger.debug(
             "Scored listing",
@@ -115,31 +118,60 @@ class ListingScorer:
             final_score=final_score,
         )
 
-        return min(100, max(0, final_score))
+        return min(100.0, max(0.0, final_score))
 
     def _calculate_rule_score(self, listing: Listing) -> float:
-        """Calculate score based on rule-based heuristics."""
+        """Calculate guardrail score (max 20 points).
+
+        Components:
+        - Neighborhood editorial potential: 0-10 points
+        - Sanity checks: 0-5 points
+        - Small price bonus: 0-5 points
+        """
         score = 0.0
-
-        # 1. Price value (underpriced for area) - up to 30 points
-        score += self._score_price_value(listing)
-
-        # 2. Architectural interest (age) - up to 20 points
-        score += self._score_architecture(listing)
-
-        # 3. Unique features (keywords) - up to 20 points
-        score += self._score_features(listing)
-
-        # 4. Neighborhood desirability - up to 15 points
         score += self._score_neighborhood(listing)
+        score += self._score_sanity(listing)
+        score += self._score_price_bonus(listing)
+        return score
 
-        # 5. Size/value ratio - up to 15 points
-        score += self._score_size_value(listing)
+    def _score_neighborhood(self, listing: Listing) -> float:
+        """Score neighborhood for editorial potential (0-10 points).
+
+        Premium neighborhoods with strong identity score highest because
+        they generate the best insider-voice content.
+        """
+        neighborhood = listing.neighborhood or ""
+        data = NEIGHBORHOOD_DATA.get(neighborhood)
+
+        if data and data.is_premium:
+            return 10  # Strong editorial identity
+        elif data:
+            return 6   # Known neighborhood
+        return 3  # Unknown — might still be interesting
+
+    def _score_sanity(self, listing: Listing) -> float:
+        """Basic sanity checks (0-5 points).
+
+        Filters out obvious junk without being price-driven.
+        """
+        score = 0.0
+        neighborhood = listing.neighborhood or ""
+        data = NEIGHBORHOOD_DATA.get(neighborhood, DEFAULT_NEIGHBORHOOD_DATA)
+
+        # Not wildly overpriced for area (3 points)
+        if listing.price > 0:
+            ratio = listing.price / data.median_price
+            if ratio <= 2.0:
+                score += 3  # Reasonable for area
+
+        # Has reasonable size (2 points)
+        if listing.sqft and listing.sqft >= 500:
+            score += 2
 
         return score
 
-    def _score_price_value(self, listing: Listing) -> float:
-        """Score based on price relative to area median."""
+    def _score_price_bonus(self, listing: Listing) -> float:
+        """Small bonus for notable value — not a primary driver (0-5 points)."""
         neighborhood = listing.neighborhood or ""
         data = NEIGHBORHOOD_DATA.get(neighborhood, DEFAULT_NEIGHBORHOOD_DATA)
 
@@ -149,80 +181,15 @@ class ListingScorer:
         ratio = listing.price / data.median_price
 
         if ratio < 0.7:
-            return 30  # Significantly underpriced
+            return 5  # Significantly underpriced — notable
         elif ratio < 0.85:
-            return 20  # Moderately underpriced
-        elif ratio < 1.0:
-            return 10  # Slightly underpriced
-        elif ratio > 1.5:
-            return 5   # Premium/luxury gets some points for interest
-        return 0
-
-    def _score_architecture(self, listing: Listing) -> float:
-        """Score based on architectural interest (age)."""
-        if not listing.year_built:
-            return 5  # Small bonus for unknown (might be interesting)
-
-        year = listing.year_built
-        current_year = 2026
-
-        if year < 1930:
-            return 20  # Very historic
-        elif year < 1950:
-            return 15  # Historic
-        elif year < 1970:
-            return 10  # Mid-century
-        elif year > current_year - 2:
-            return 15  # New construction
-        elif year > current_year - 5:
-            return 10  # Recent construction
-
-        return 0
-
-    def _score_features(self, listing: Listing) -> float:
-        """Score based on unique features mentioned in description."""
-        description = (listing.description_raw or "").lower()
-
-        # Count keyword matches
-        matches = sum(1 for kw in POSITIVE_KEYWORDS if kw in description)
-
-        # Cap at 20 points (2 points per keyword match, max 10 matches)
-        return min(20, matches * 2)
-
-    def _score_neighborhood(self, listing: Listing) -> float:
-        """Score based on neighborhood desirability."""
-        neighborhood = listing.neighborhood or ""
-        data = NEIGHBORHOOD_DATA.get(neighborhood)
-
-        if data and data.is_premium:
-            return 15
-        elif data:
-            return 8
-        return 3  # Unknown neighborhood gets small bonus
-
-    def _score_size_value(self, listing: Listing) -> float:
-        """Score based on price per square foot value."""
-        if not listing.sqft or listing.sqft <= 0 or listing.price <= 0:
-            return 0
-
-        price_per_sqft = listing.price / listing.sqft
-
-        # Houston averages around $200-250/sqft for decent areas
-        if price_per_sqft < 150:
-            return 15  # Great value
-        elif price_per_sqft < 200:
-            return 10  # Good value
-        elif price_per_sqft < 250:
-            return 5   # Fair value
-        elif price_per_sqft > 500:
-            return 5   # Luxury premium (interesting for different reasons)
-
+            return 3  # Moderately underpriced
         return 0
 
     def batch_score(
         self,
         listings: list[Listing],
-        ai_scores: Optional[dict[str, float]] = None,
+        ai_scores: dict[str, float] | None = None,
     ) -> list[tuple[Listing, float]]:
         """
         Score a batch of listings.
@@ -242,7 +209,6 @@ class ListingScorer:
             score = self.score(listing, ai_score)
             scored.append((listing, score))
 
-        # Sort by score descending
         scored.sort(key=lambda x: x[1], reverse=True)
 
         return scored

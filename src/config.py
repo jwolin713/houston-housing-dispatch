@@ -22,8 +22,9 @@ class Settings(BaseSettings):
     har_email_label: str = "HAR Alerts"
 
     # Claude API
-    anthropic_api_key: str
+    anthropic_api_key: str = ""  # Optional when use_ai=False
     claude_model: str = "claude-sonnet-4-20250514"
+    use_ai: bool = False  # Set to True to use Claude API for scoring/descriptions
 
     # Substack
     substack_publication_url: str
@@ -36,6 +37,11 @@ class Settings(BaseSettings):
     # Email Notifications (Resend)
     resend_api_key: str = ""
     notification_email: str
+
+    # Zillow/Apify enrichment
+    apify_api_token: str = ""
+    apify_zillow_actor_id: str = "maxcopell/zillow-detail-scraper"
+    zillow_enrichment_enabled: bool = True
 
     # Application
     secret_key: str

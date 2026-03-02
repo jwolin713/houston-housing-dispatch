@@ -1,6 +1,6 @@
 """Claude API client wrapper for AI-powered operations."""
 
-from typing import Any, Optional
+from typing import Any
 
 import anthropic
 import structlog
@@ -32,7 +32,7 @@ class ClaudeClient:
     def complete(
         self,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
     ) -> str:
@@ -78,7 +78,7 @@ class ClaudeClient:
     def complete_json(
         self,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         max_tokens: int = 4096,
     ) -> Any:
         """
@@ -95,7 +95,8 @@ class ClaudeClient:
         import json
 
         # Add JSON instruction to system prompt
-        json_system = (system or "") + "\n\nYou must respond with valid JSON only. No markdown, no explanation, just JSON."
+        json_instruction = "\n\nYou must respond with valid JSON only. No markdown, no explanation, just JSON."
+        json_system = (system or "") + json_instruction
 
         result = self.complete(
             prompt=prompt,
@@ -120,53 +121,79 @@ class ClaudeClient:
         listings: list[dict],
     ) -> list[dict]:
         """
-        Use Claude to score listings for interest/uniqueness.
+        Use Claude to score listings for newsletter editorial interest.
+
+        Scoring is aligned with the Houston Housing Dispatch voice guide:
+        "Interesting houses that can become long-lasting homes."
 
         Args:
             listings: List of listing dicts with address, price, details, etc.
 
         Returns:
-            List of listings with added 'ai_score' and 'ai_reasoning' fields
+            List of dicts with 'address', 'ai_score', and 'ai_reasoning' fields
         """
         if not listings:
             return []
 
-        prompt = f"""Analyze these Houston real estate listings and score each one for newsletter interest.
+        import json
 
-Consider these factors:
-- Unique architectural features or history
-- Value proposition (underpriced for area/size)
-- Desirable neighborhoods (Heights, Montrose, River Oaks, West U, etc.)
-- Interesting details that would engage readers
-- New construction or well-renovated older homes
+        listings_text = json.dumps(listings, indent=2, default=str)
 
-For each listing, provide:
-- score: 0-100 (higher = more interesting for newsletter)
-- reasoning: 1-2 sentences explaining why
+        prompt = f"""Score these Houston listings for newsletter inclusion (0-100).
 
-Listings to analyze:
-{listings}
+For each listing, consider:
+1. Does it have architectural character or distinctive features?
+2. Is there a story here? (neighborhood context, history, notable details)
+3. Would it make compelling newsletter content?
+4. Does it fit "interesting houses that can become long-lasting homes"?
 
-Respond with JSON array matching the input order:
+Score HIGH (70-100): Character homes, notable architecture, story potential, quirky or distinctive
+Score MEDIUM (40-69): Decent homes but nothing particularly distinctive
+Score LOW (0-39): Generic, cookie-cutter, bland new construction, or investor specials
+
+Return a JSON array matching the input order:
 [
-  {{"address": "...", "score": 85, "reasoning": "Historic Heights home with rare garage apartment..."}},
+  {{"address": "...", "score": 85, "reasoning": "1925 Heights bungalow with original hardwoods..."}},
   ...
 ]
+
+Listings:
+{listings_text}
 """
 
-        system = """You are an expert Houston real estate analyst helping curate a newsletter.
-You understand what makes properties interesting to buyers and investors in the Houston market.
-Focus on unique features, good value, and architectural interest."""
+        system = """You are an editorial curator for the Houston Housing Dispatch, a real estate \
+newsletter inspired by Curbed and Brownstoner. You're looking for interesting houses that can \
+become long-lasting homes.
+
+This is NOT an investment newsletter. Do NOT prioritize:
+- Flipping potential or ROI
+- Being "underpriced" or a "deal"
+- Generic new construction without character
+
+DO prioritize:
+- Architectural character and distinctive design
+- Story potential (history, neighborhood context, notable features)
+- Properties that would make compelling, specific newsletter content
+- Homes with "bones" - good structure that could become special
+- Unique or quirky features worth highlighting
+- Neighborhood identity and walkability context
+
+Think: "Would a Curbed reader stop scrolling for this house?"
+"""
 
         result = self.complete_json(prompt, system=system)
 
-        # Merge AI scores back into listings
-        for i, listing in enumerate(listings):
-            if i < len(result):
-                listing["ai_score"] = result[i].get("score", 50)
-                listing["ai_reasoning"] = result[i].get("reasoning", "")
+        # Normalize result into consistent format
+        scored = []
+        for i, item in enumerate(result):
+            fallback_addr = listings[i].get("address", "") if i < len(listings) else ""
+            scored.append({
+                "address": item.get("address", fallback_addr),
+                "ai_score": float(item.get("score", 50)),
+                "ai_reasoning": item.get("reasoning", ""),
+            })
 
-        return listings
+        return scored
 
     def generate_listing_description(
         self,

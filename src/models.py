@@ -2,7 +2,6 @@
 
 import enum
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import (
     Column,
@@ -81,6 +80,16 @@ class Listing(Base):
     har_link = Column(String(1000), nullable=False)
     description_raw = Column(Text, nullable=True)  # Original description from HAR
     image_urls = Column(JSON, nullable=True)  # List of image URLs
+
+    # Zillow enrichment
+    zillow_description = Column(Text, nullable=True)
+    zillow_url = Column(String(1000), nullable=True)
+    enrichment_source = Column(String(50), nullable=True)  # "har_only" | "zillow"
+    zillow_fetched_at = Column(DateTime, nullable=True)
+
+    # AI scoring
+    ai_score = Column(Float, nullable=True)
+    ai_reasoning = Column(Text, nullable=True)
 
     # Email metadata
     email_id = Column(String(100), nullable=True)  # Gmail message ID
