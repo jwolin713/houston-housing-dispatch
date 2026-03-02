@@ -242,16 +242,17 @@ class PipelineScheduler:
 
     def _setup_jobs(self):
         """Configure scheduled jobs."""
-        # Daily pipeline at configured hour (default 8 AM)
+        # Pipeline runs Wednesday and Friday mornings
         self.scheduler.add_job(
             run_daily_pipeline,
             trigger=CronTrigger(
+                day_of_week="wed,fri",
                 hour=self.settings.curation_hour,
                 minute=0,
                 timezone=self.settings.timezone,
             ),
-            id="daily_pipeline",
-            name="Daily Newsletter Pipeline",
+            id="newsletter_pipeline",
+            name="Newsletter Pipeline (Wed/Fri)",
             replace_existing=True,
         )
 
