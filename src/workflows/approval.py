@@ -76,7 +76,12 @@ class ApprovalWorkflow:
         # Build URLs
         approve_url = f"{base_url}/approve/newsletter/{tokens['approve_token']}?action=approve"
         reject_url = f"{base_url}/approve/newsletter/{tokens['reject_token']}?action=reject"
-        preview_url = f"{base_url}/approve/preview/{newsletter.id}"
+
+        # Use Substack draft URL for preview if available
+        if newsletter.substack_draft_id:
+            preview_url = f"{self.settings.substack_publication_url}/publish/post/{newsletter.substack_draft_id}"
+        else:
+            preview_url = f"{base_url}/approve/preview/{newsletter.id}"
 
         # Update newsletter with token info
         newsletter.approval_token = tokens["approve_token"]
@@ -328,6 +333,12 @@ class ApprovalWorkflow:
             )
 
             for newsletter in approaching:
+                # Build preview URL (prefer Substack draft)
+                if newsletter.substack_draft_id:
+                    preview_url = f"{self.settings.substack_publication_url}/publish/post/{newsletter.substack_draft_id}"
+                else:
+                    preview_url = f"{base_url}/approve/preview/{newsletter.id}"
+
                 # Re-send approval email as reminder
                 self.email_sender.send_alert_email(
                     subject=f"Reminder: Newsletter expires soon",
@@ -335,7 +346,7 @@ class ApprovalWorkflow:
                     details={
                         "Newsletter ID": newsletter.id,
                         "Expires": newsletter.approval_expires_at.isoformat(),
-                        "Preview": f"{base_url}/approve/preview/{newsletter.id}",
+                        "Preview": preview_url,
                     },
                 )
                 reminder_sent += 1

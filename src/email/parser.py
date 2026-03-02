@@ -33,10 +33,11 @@ class HAREmailParser:
     # Common HAR email patterns
     PRICE_PATTERN = re.compile(r"\$[\d,]+")
     BEDS_PATTERN = re.compile(r"(\d+)\s*(?:bed|br|bedroom)", re.IGNORECASE)
-    BATHS_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(?:bath|ba|bathroom)", re.IGNORECASE)
+    BATHS_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(?:full|bath|ba|bathroom)", re.IGNORECASE)
+    HALF_BATHS_PATTERN = re.compile(r"(\d+)\s*half", re.IGNORECASE)
     SQFT_PATTERN = re.compile(r"([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)", re.IGNORECASE)
     YEAR_PATTERN = re.compile(r"(?:built|year)[:\s]*(\d{4})", re.IGNORECASE)
-    HAR_LINK_PATTERN = re.compile(r"https?://(?:www\.)?har\.com/[^\s\"'<>]+")
+    HAR_LINK_PATTERN = re.compile(r"https?://(?:www\.)?har\.com/homedetail/[^\s\"'<>]+")
 
     # Houston neighborhoods (common ones)
     NEIGHBORHOODS = [
@@ -93,14 +94,125 @@ class HAREmailParser:
         soup = BeautifulSoup(html_content, "lxml")
         listings = []
 
-        # Try multiple parsing strategies
-        listings = self._parse_table_format(soup)
+        # Try HAR-specific format first (most common)
+        listings = self._parse_har_format(soup)
+        if not listings:
+            listings = self._parse_table_format(soup)
         if not listings:
             listings = self._parse_card_format(soup)
         if not listings:
             listings = self._parse_generic_format(soup)
 
         logger.info("Parsed listings from email", count=len(listings))
+        return listings
+
+    def _parse_har_format(self, soup: BeautifulSoup) -> list[ParsedListing]:
+        """Parse HAR's specific email format with nested tables."""
+        listings = []
+
+        # Find all links to HAR property detail pages
+        har_links = soup.find_all("a", href=self.HAR_LINK_PATTERN)
+        seen_addresses = set()
+
+        for link in har_links:
+            href = link.get("href", "")
+            if not href or "homedetail" not in href:
+                continue
+
+            # Find the parent table that contains this listing's data
+            # Go up to find the property item table
+            parent_table = link.find_parent("table")
+            if not parent_table:
+                continue
+
+            # The listing table has specific structure - check for View Listing button
+            table_html = str(parent_table)
+            if "View Listing" not in table_html:
+                continue
+
+            # Extract listing data from this table
+            text = parent_table.get_text(" ", strip=True)
+
+            # Extract address - look for the bold address line
+            address = None
+            for td in parent_table.find_all("td"):
+                td_style = td.get("style", "")
+                if "font-weight:bold" in td_style and "padding-top:12px" in td_style:
+                    addr_text = td.get_text(strip=True)
+                    # Clean up the address - remove &zwnj; and normalize
+                    addr_text = addr_text.replace("\u200c", "").replace("&zwnj;", "")
+                    if self._looks_like_address(addr_text):
+                        address = self._clean_address(addr_text)
+                        break
+
+            if not address or address in seen_addresses:
+                continue
+            seen_addresses.add(address)
+
+            # Extract price
+            price_match = self.PRICE_PATTERN.search(text)
+            if not price_match:
+                continue
+            price = int(price_match.group(0).replace("$", "").replace(",", ""))
+
+            # Extract beds
+            beds = 0
+            beds_match = self.BEDS_PATTERN.search(text)
+            if beds_match:
+                beds = int(beds_match.group(1))
+
+            # Extract baths (full + half)
+            baths = 0.0
+            full_baths_match = self.BATHS_PATTERN.search(text)
+            half_baths_match = self.HALF_BATHS_PATTERN.search(text)
+            if full_baths_match:
+                baths = float(full_baths_match.group(1))
+            if half_baths_match:
+                baths += float(half_baths_match.group(1)) * 0.5
+
+            # Extract sqft
+            sqft = None
+            sqft_match = self.SQFT_PATTERN.search(text)
+            if sqft_match:
+                sqft = int(sqft_match.group(1).replace(",", ""))
+
+            # Extract subdivision/neighborhood from "Located in X" text
+            neighborhood = None
+            for td in parent_table.find_all("td"):
+                td_text = td.get_text(strip=True)
+                if td_text.startswith("Located in "):
+                    neighborhood = td_text.replace("Located in ", "").strip()
+                    break
+
+            # Also check for known neighborhoods in text
+            if not neighborhood:
+                neighborhood_match = self.neighborhood_pattern.search(text)
+                if neighborhood_match:
+                    neighborhood = neighborhood_match.group(0)
+
+            # Extract image URL
+            image_urls = []
+            for img in parent_table.find_all("img"):
+                src = img.get("src", "")
+                if src and "harstatic.com" in src:
+                    image_urls.append(src)
+
+            listing = ParsedListing(
+                address=address,
+                price=price,
+                bedrooms=beds,
+                bathrooms=baths,
+                sqft=sqft,
+                year_built=None,
+                neighborhood=neighborhood,
+                property_type=self._extract_property_type(text),
+                har_link=href,
+                description=None,
+                image_urls=image_urls,
+            )
+            listings.append(listing)
+            logger.debug("Parsed listing", address=address, price=price)
+
         return listings
 
     def _parse_table_format(self, soup: BeautifulSoup) -> list[ParsedListing]:

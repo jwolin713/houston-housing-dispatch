@@ -124,22 +124,23 @@ class GmailClient:
             after_date=after_date,
         )
 
-        # Build query
-        query_parts = []
+        # Build query - search for HAR emails by subject
+        query_parts = ['subject:"HAR.com Saved Search"']
         if after_date:
             # Gmail query format: after:YYYY/MM/DD
             query_parts.append(f"after:{after_date.strftime('%Y/%m/%d')}")
 
-        query = " ".join(query_parts) if query_parts else None
+        query = " ".join(query_parts)
 
-        # Get label ID
+        # Optionally also filter by label if it exists
         label_ids = []
         if label_name:
             label_id = self._get_label_id(label_name)
             if label_id:
                 label_ids.append(label_id)
+                logger.info("Using label filter", label=label_name)
             else:
-                logger.warning("Label not found", label=label_name)
+                logger.info("Label not found, using subject search only", label=label_name)
 
         try:
             # List messages

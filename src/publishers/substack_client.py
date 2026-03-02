@@ -1,17 +1,135 @@
 """Substack client with abstracted interface for draft creation and publishing."""
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Protocol
 
 import structlog
+from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.auth.cookie_manager import CookieManager
 from src.config import get_settings
 
 logger = structlog.get_logger()
+
+
+def html_to_substack_elements(html_content: str) -> list[dict]:
+    """
+    Convert HTML content to Substack's element format.
+
+    Substack uses a structured document format. This function parses HTML
+    and converts it to the appropriate element types.
+
+    Elements can be:
+    - {"type": "heading", "content": "text", "level": 1|2|3}
+    - {"type": "paragraph", "parts": [{"text": "...", "link": None}, {"text": "...", "link": "url"}]}
+    - {"type": "divider"}
+    """
+    soup = BeautifulSoup(html_content, "html.parser")
+    elements = []
+
+    # Find the body content or use the whole thing
+    body = soup.find("body") or soup
+
+    for element in body.children:
+        if element.name is None:
+            # Text node
+            text = str(element).strip()
+            if text:
+                elements.append({"type": "paragraph", "parts": [{"text": text, "link": None}]})
+
+        elif element.name == "h1":
+            elements.append({"type": "heading", "content": element.get_text(), "level": 1})
+
+        elif element.name == "h2":
+            elements.append({"type": "heading", "content": element.get_text(), "level": 2})
+
+        elif element.name == "h3":
+            elements.append({"type": "heading", "content": element.get_text(), "level": 3})
+
+        elif element.name == "p":
+            # Handle paragraphs with potential links
+            parts = _extract_parts_with_links(element)
+            if parts:
+                elements.append({"type": "paragraph", "parts": parts})
+
+        elif element.name == "hr":
+            elements.append({"type": "divider"})
+
+        elif element.name == "div":
+            # Process div contents recursively
+            div_html = "".join(str(child) for child in element.children)
+            elements.extend(html_to_substack_elements(div_html))
+
+        elif element.name in ["ul", "ol"]:
+            # Handle lists
+            for li in element.find_all("li", recursive=False):
+                parts = _extract_parts_with_links(li)
+                if parts:
+                    # Prepend bullet
+                    parts.insert(0, {"text": "• ", "link": None})
+                    elements.append({"type": "paragraph", "parts": parts})
+
+        elif element.name == "a":
+            href = element.get("href", "")
+            text = element.get_text()
+            elements.append({"type": "paragraph", "parts": [{"text": text, "link": href}]})
+
+        elif element.name == "style":
+            # Skip style tags
+            pass
+
+        else:
+            # Fallback: extract text
+            text = element.get_text().strip()
+            if text:
+                elements.append({"type": "paragraph", "parts": [{"text": text, "link": None}]})
+
+    return elements
+
+
+def _extract_parts_with_links(element) -> list[dict]:
+    """Extract text parts from an element, preserving links."""
+    parts = []
+    for child in element.children:
+        if child.name is None:
+            text = str(child)
+            if text:
+                parts.append({"text": text, "link": None})
+        elif child.name == "a":
+            href = child.get("href", "")
+            text = child.get_text()
+            if text:
+                parts.append({"text": text, "link": href})
+        elif child.name == "br":
+            parts.append({"text": "\n", "link": None})
+        else:
+            # Recursively extract from nested elements
+            text = child.get_text()
+            if text:
+                parts.append({"text": text, "link": None})
+    return parts
+
+
+def add_paragraph_to_post(post, parts: list[dict]):
+    """Add a paragraph with mixed text and links to a Substack post."""
+    if not parts:
+        return
+
+    # Start the paragraph with the first part
+    first_part = parts[0]
+    post.paragraph(first_part["text"])
+    if first_part["link"]:
+        post.marks([{"type": "link", "href": first_part["link"]}])
+
+    # Add remaining parts
+    for part in parts[1:]:
+        post.add_complex_text(part["text"])
+        if part["link"]:
+            post.marks([{"type": "link", "href": part["link"]}])
 
 
 @dataclass
@@ -86,11 +204,14 @@ class SubstackClient:
                     "Run: houston-dispatch cookies capture"
                 )
 
+            # Convert dict to semicolon-separated string for python-substack
+            cookies_string = "; ".join(f"{k}={v}" for k, v in cookies.items())
+
             try:
                 # Import here to handle missing dependency gracefully
                 from substack import Api
 
-                self._api = Api(cookies=cookies)
+                self._api = Api(cookies_string=cookies_string)
                 logger.info("Substack API initialized")
 
             except ImportError:
@@ -158,14 +279,34 @@ class SubstackClient:
         try:
             api = self._get_api()
 
-            # Note: Actual implementation depends on python-substack API
-            # The library may have different method names
-            draft = api.create_draft(
-                title=title,
-                body_html=content_html,
-            )
+            # python-substack requires using the Post class
+            from substack.post import Post
 
-            draft_id = str(draft.id) if hasattr(draft, "id") else str(draft)
+            # Get user ID for creating posts
+            user_id = api.get_user_id()
+
+            # Create post with title
+            post = Post(title=title, subtitle="", user_id=user_id)
+
+            # Convert HTML to Substack elements
+            elements = html_to_substack_elements(content_html)
+
+            # Add each element to the post using proper methods
+            for elem in elements:
+                if elem["type"] == "heading":
+                    level = elem.get("level", 2)
+                    post.heading(elem["content"], level=level)
+                elif elem["type"] == "divider":
+                    post.horizontal_rule()
+                elif elem["type"] == "paragraph":
+                    # Use the helper to handle links properly
+                    add_paragraph_to_post(post, elem.get("parts", []))
+
+            # Create the draft
+            draft = api.post_draft(post.get_draft())
+
+            # Extract draft ID from response
+            draft_id = str(draft.get("id", "")) if isinstance(draft, dict) else str(draft)
             draft_url = f"{self.settings.substack_publication_url}/publish/post/{draft_id}"
 
             logger.info(

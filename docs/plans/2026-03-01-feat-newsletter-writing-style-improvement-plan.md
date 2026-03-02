@@ -1,7 +1,7 @@
 ---
 title: "feat: Improve Newsletter Writing Style"
 type: feat
-status: active
+status: completed
 date: 2026-03-01
 origin: docs/brainstorms/2026-03-01-newsletter-writing-style-brainstorm.md
 ---

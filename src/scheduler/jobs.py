@@ -47,7 +47,8 @@ def run_daily_pipeline():
         logger.info("Email processing complete", **email_stats)
 
         # Step 2: Check if we have enough listings
-        curator = Curator()
+        # Use rule-based scoring only when AI is disabled
+        curator = Curator(use_ai_scoring=settings.use_ai)
         readiness = curator.check_readiness()
 
         if not readiness["ready"]:
@@ -64,7 +65,7 @@ def run_daily_pipeline():
             }
 
         # Step 3: Curate listings
-        logger.info("Step 2: Curating listings")
+        logger.info("Step 2: Curating listings", use_ai=settings.use_ai)
         with get_db() as db:
             selected = curator.curate(db)
 
@@ -77,9 +78,16 @@ def run_daily_pipeline():
                 }
 
             # Step 4: Generate newsletter content
-            logger.info("Step 3: Generating newsletter")
-            generator = NewsletterGenerator()
-            content = generator.generate_newsletter(selected)
+            logger.info("Step 3: Generating newsletter", use_ai=settings.use_ai)
+
+            if settings.use_ai:
+                generator = NewsletterGenerator()
+                content = generator.generate_newsletter(selected)
+            else:
+                # Use template-based generator (no API credits needed)
+                from src.generation.template_generator import TemplateNewsletterGenerator
+                generator = TemplateNewsletterGenerator()
+                content = generator.generate_newsletter(selected)
 
             # Step 5: Create newsletter record
             newsletter = Newsletter(
@@ -124,13 +132,17 @@ def run_daily_pipeline():
                 ),  # Adjust based on your deployment
             )
 
-        logger.info("Daily pipeline complete", newsletter_id=newsletter.id)
+            # Capture values before session closes
+            newsletter_id = newsletter.id
+            listings_count = len(selected)
+
+        logger.info("Daily pipeline complete", newsletter_id=newsletter_id)
 
         return {
             "success": True,
             "action": "newsletter_created",
-            "newsletter_id": newsletter.id,
-            "listings_count": len(selected),
+            "newsletter_id": newsletter_id,
+            "listings_count": listings_count,
             "approval_sent": approval_result.get("success", False),
         }
 

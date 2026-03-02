@@ -10,13 +10,11 @@ import structlog
 # Configure logging
 structlog.configure(
     processors=[
-        structlog.stdlib.filter_by_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.dev.ConsoleRenderer(colors=True),
     ],
-    wrapper_class=structlog.stdlib.BoundLogger,
     context_class=dict,
     logger_factory=structlog.PrintLoggerFactory(),
 )
@@ -73,7 +71,8 @@ def cmd_curate(args):
         preview = curator.get_curated_preview(limit=5)
         for i, listing in enumerate(preview, 1):
             print(f"  {i}. ${listing['price']:,} - {listing['address']}")
-            print(f"     {listing['neighborhood']} | Score: {listing['score']:.1f}")
+            score = listing.get('score') or 0
+            print(f"     {listing['neighborhood']} | Score: {score:.1f}")
 
 
 def cmd_health(args):
@@ -115,18 +114,42 @@ def cmd_cookies_capture(args):
     """Capture new Substack cookies."""
     from src.auth.cookie_manager import CookieManager
 
-    print(CookieManager.get_cookie_capture_instructions())
+    if args.cookie_string:
+        # Parse the full cookie string
+        manager = CookieManager()
+        cookies = {}
+        for part in args.cookie_string.split(";"):
+            part = part.strip()
+            if "=" in part:
+                name, value = part.split("=", 1)
+                name = name.strip()
+                # Only save substack-related cookies
+                if name.startswith("substack"):
+                    cookies[name] = value.strip()
 
-    if args.sid:
+        if not cookies:
+            print("✗ No substack cookies found in the string")
+            return
+
+        manager.save_cookies(cookies)
+        print(f"✓ Saved {len(cookies)} cookies:")
+        for name in cookies:
+            print(f"  - {name}")
+    elif args.sid:
         manager = CookieManager()
         cookies = {"substack.sid": args.sid}
         manager.save_cookies(cookies)
         print("\n✓ Cookies saved successfully!")
+    else:
+        print(CookieManager.get_cookie_capture_instructions())
 
 
 def cmd_server(args):
     """Start the FastAPI server."""
     import uvicorn
+    from src.deploy.railway_init import init_credentials
+
+    init_credentials()
 
     print(f"Starting server on {args.host}:{args.port}...")
     uvicorn.run(
@@ -139,7 +162,10 @@ def cmd_server(args):
 
 def cmd_scheduler(args):
     """Start the scheduler daemon."""
+    from src.deploy.railway_init import init_credentials
     from src.scheduler.jobs import PipelineScheduler
+
+    init_credentials()
 
     scheduler = PipelineScheduler()
 
@@ -185,6 +211,33 @@ def cmd_stats(args):
         print(f"  Published: {published}")
 
 
+def cmd_debug_email(args):
+    """Dump raw email HTML for debugging the parser."""
+    from src.database import init_db, get_db
+    from src.models import RawEmail
+    from pathlib import Path
+
+    init_db()
+
+    with get_db() as db:
+        # Get most recent email
+        email = db.query(RawEmail).order_by(RawEmail.received_at.desc()).first()
+
+        if not email:
+            print("No emails found in database")
+            return
+
+        print(f"Email: {email.subject}")
+        print(f"From: {email.sender}")
+        print(f"Date: {email.received_at}")
+        print(f"Content length: {len(email.raw_content or '')}")
+
+        # Save to file
+        output_path = Path("debug_email.html")
+        output_path.write_text(email.raw_content or "", encoding="utf-8")
+        print(f"\nSaved to: {output_path.absolute()}")
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -225,6 +278,9 @@ def main():
         "capture", help="Capture new cookies"
     )
     cookies_capture.add_argument("--sid", help="Substack session ID to save")
+    cookies_capture.add_argument(
+        "--cookie-string", help="Full cookie string from browser Network tab"
+    )
     cookies_capture.set_defaults(func=cmd_cookies_capture)
 
     # server command
@@ -241,6 +297,10 @@ def main():
     # stats command
     stats_parser = subparsers.add_parser("stats", help="Show statistics")
     stats_parser.set_defaults(func=cmd_stats)
+
+    # debug-email command
+    debug_parser = subparsers.add_parser("debug-email", help="Dump email HTML for debugging")
+    debug_parser.set_defaults(func=cmd_debug_email)
 
     # Parse and execute
     args = parser.parse_args()
