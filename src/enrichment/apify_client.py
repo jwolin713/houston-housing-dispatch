@@ -23,6 +23,7 @@ class ZillowResult:
     home_type: str | None = None
     year_built: int | None = None
     lot_size: str | None = None
+    neighborhood: str | None = None
     raw_data: dict = field(default_factory=dict)
     error: str | None = None
 
@@ -148,6 +149,14 @@ class ApifyZillowClient:
         if zillow_url and not zillow_url.startswith("http"):
             zillow_url = f"https://www.zillow.com{zillow_url}"
 
+        # Extract neighborhood from Zillow data
+        neighborhood = None
+        for key in ("neighborhood", "neighborhoodRegion", "subdivision"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                neighborhood = value.strip()
+                break
+
         return ZillowResult(
             success=bool(address and description),
             address=address,
@@ -156,5 +165,6 @@ class ApifyZillowClient:
             home_type=item.get("homeType") or item.get("propertyType"),
             year_built=item.get("yearBuilt"),
             lot_size=item.get("lotSize") or item.get("lotAreaValue"),
+            neighborhood=neighborhood,
             raw_data=item,
         )

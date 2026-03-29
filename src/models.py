@@ -76,6 +76,7 @@ class Listing(Base):
     sqft = Column(Integer, nullable=True)
     year_built = Column(Integer, nullable=True)
     neighborhood = Column(String(200), nullable=True)
+    subdivision = Column(String(200), nullable=True)  # Raw MLS subdivision from HAR "Located in"
     property_type = Column(String(100), nullable=True)  # Single Family, Condo, etc.
     har_link = Column(String(1000), nullable=False)
     description_raw = Column(Text, nullable=True)  # Original description from HAR

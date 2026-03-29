@@ -7,7 +7,11 @@ from typing import Optional
 import structlog
 from bs4 import BeautifulSoup
 
+from src.enrichment.neighborhood_resolver import NeighborhoodResolver
+
 logger = structlog.get_logger()
+
+_resolver = NeighborhoodResolver()
 
 
 @dataclass
@@ -21,6 +25,7 @@ class ParsedListing:
     sqft: Optional[int] = None
     year_built: Optional[int] = None
     neighborhood: Optional[str] = None
+    subdivision: Optional[str] = None  # Raw MLS subdivision from HAR "Located in"
     property_type: Optional[str] = None
     har_link: str = ""
     description: Optional[str] = None
@@ -176,15 +181,19 @@ class HAREmailParser:
             if sqft_match:
                 sqft = int(sqft_match.group(1).replace(",", ""))
 
-            # Extract subdivision/neighborhood from "Located in X" text
-            neighborhood = None
+            # Extract MLS subdivision from "Located in X" text
+            subdivision = None
             for td in parent_table.find_all("td"):
                 td_text = td.get_text(strip=True)
                 if td_text.startswith("Located in "):
-                    neighborhood = td_text.replace("Located in ", "").strip()
+                    subdivision = td_text.replace("Located in ", "").strip()
                     break
 
-            # Also check for known neighborhoods in text
+            # Resolve a human-friendly neighborhood name from zip code.
+            # Use full listing text since _clean_address strips the zip.
+            neighborhood = _resolver.resolve(text)
+
+            # Fallback: check for known neighborhood names in the listing text
             if not neighborhood:
                 neighborhood_match = self.neighborhood_pattern.search(text)
                 if neighborhood_match:
@@ -205,6 +214,7 @@ class HAREmailParser:
                 sqft=sqft,
                 year_built=None,
                 neighborhood=neighborhood,
+                subdivision=subdivision,
                 property_type=self._extract_property_type(text),
                 har_link=href,
                 description=None,

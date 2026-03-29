@@ -6,6 +6,7 @@ import structlog
 
 from src.enrichment.address_normalizer import AddressNormalizer, ParsedAddress
 from src.enrichment.apify_client import ApifyZillowClient, ZillowResult
+from src.enrichment.neighborhood_resolver import NeighborhoodResolver
 from src.models import Listing
 
 logger = structlog.get_logger()
@@ -18,9 +19,11 @@ class ZillowEnricher:
         self,
         apify_client: ApifyZillowClient | None = None,
         normalizer: AddressNormalizer | None = None,
+        neighborhood_resolver: NeighborhoodResolver | None = None,
     ):
         self.apify_client = apify_client or ApifyZillowClient()
         self.normalizer = normalizer or AddressNormalizer()
+        self.neighborhood_resolver = neighborhood_resolver or NeighborhoodResolver()
 
     def enrich_listings(
         self,
@@ -106,6 +109,14 @@ class ZillowEnricher:
                 listing.zillow_url = result.zillow_url
                 listing.enrichment_source = "zillow"
                 listing.zillow_fetched_at = now
+
+                # Resolve neighborhood from Zillow data (overrides zip-based)
+                zillow_neighborhood = self.neighborhood_resolver.resolve(
+                    listing.address, zillow_raw_data=result.raw_data
+                )
+                if zillow_neighborhood:
+                    listing.neighborhood = zillow_neighborhood
+
                 results.append((listing, result))
             elif listing in to_enrich:
                 listing.enrichment_source = "har_only"

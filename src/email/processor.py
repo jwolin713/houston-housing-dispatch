@@ -208,6 +208,10 @@ class EmailProcessor:
                 existing.neighborhood = parsed.neighborhood
                 updated = True
 
+            if not existing.subdivision and parsed.subdivision:
+                existing.subdivision = parsed.subdivision
+                updated = True
+
             if parsed.image_urls and (not existing.image_urls or len(parsed.image_urls) > len(existing.image_urls or [])):
                 existing.image_urls = parsed.image_urls
                 updated = True
@@ -223,6 +227,7 @@ class EmailProcessor:
             sqft=parsed.sqft,
             year_built=parsed.year_built,
             neighborhood=parsed.neighborhood,
+            subdivision=parsed.subdivision,
             property_type=parsed.property_type,
             har_link=parsed.har_link,
             description_raw=parsed.description,
