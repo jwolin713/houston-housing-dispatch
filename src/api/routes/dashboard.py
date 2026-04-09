@@ -159,6 +159,16 @@ async def get_pending_approval():
         ]
 
 
+@router.post("/trigger-pipeline")
+async def trigger_pipeline():
+    """Manually trigger the newsletter pipeline."""
+    from src.scheduler.jobs import run_daily_pipeline
+
+    logger.info("Manually triggering pipeline via API")
+    result = run_daily_pipeline()
+    return result
+
+
 @router.get("/recent-listings")
 async def get_recent_listings(
     limit: int = Query(20, ge=1, le=100),

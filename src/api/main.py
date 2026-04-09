@@ -15,20 +15,11 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown."""
-    from src.scheduler.jobs import PipelineScheduler
-
     # Startup
     logger.info("Starting Houston Housing Dispatch API")
     init_db()
-
-    scheduler = PipelineScheduler()
-    scheduler.start()
-    logger.info("Scheduler started", jobs=[j["name"] for j in scheduler.get_jobs()])
-
     yield
-
     # Shutdown
-    scheduler.stop()
     logger.info("Shutting down Houston Housing Dispatch API")
 
 
