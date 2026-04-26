@@ -169,6 +169,24 @@ async def trigger_pipeline():
     return result
 
 
+@router.post("/send-approval/{newsletter_id}")
+async def send_approval_email(newsletter_id: int):
+    """Send approval email for an existing newsletter."""
+    from src.config import get_settings
+    from src.workflows.approval import ApprovalWorkflow
+
+    settings = get_settings()
+    with get_db() as db:
+        newsletter = db.query(Newsletter).filter(Newsletter.id == newsletter_id).first()
+        if not newsletter:
+            return {"success": False, "error": "Newsletter not found"}
+
+        workflow = ApprovalWorkflow()
+        base_url = f"https://web-production-77eff.up.railway.app"
+        result = workflow.send_for_approval(db, newsletter, base_url=base_url)
+        return result
+
+
 @router.get("/recent-listings")
 async def get_recent_listings(
     limit: int = Query(20, ge=1, le=100),
