@@ -67,7 +67,15 @@ class NewsletterGenerator:
         # Group listings by neighborhood
         by_neighborhood = self._group_by_neighborhood(listings)
 
-        # Generate descriptions for each listing
+        # Generate all descriptions in a single batch call for better variety
+        all_listings_flat = []
+        for neighborhood_listings in by_neighborhood.values():
+            all_listings_flat.extend(neighborhood_listings)
+
+        descriptions = self._generate_all_descriptions(all_listings_flat)
+
+        # Build sections with the batch-generated descriptions
+        desc_idx = 0
         sections = []
         for neighborhood, neighborhood_listings in by_neighborhood.items():
             # Generate neighborhood intro sentence
@@ -82,7 +90,13 @@ class NewsletterGenerator:
             }
 
             for listing in neighborhood_listings:
-                description = self._generate_listing_description(listing)
+                description = descriptions[desc_idx]
+                desc_idx += 1
+
+                # Fall back to individual generation if batch returned empty
+                if not description:
+                    description = self._generate_listing_description(listing)
+
                 listing.generated_description = description
 
                 section["listings"].append({
@@ -162,6 +176,34 @@ class NewsletterGenerator:
             voice_examples=self.voice.intro_examples,
         )
 
+    def _generate_all_descriptions(self, listings: list[Listing]) -> list[str]:
+        """Generate descriptions for all listings in a single batch call."""
+        listing_dicts = [
+            {
+                "address": l.address,
+                "price": l.price,
+                "bedrooms": l.bedrooms,
+                "bathrooms": l.bathrooms,
+                "sqft": l.sqft,
+                "year_built": l.year_built,
+                "neighborhood": l.neighborhood,
+                "property_type": l.property_type,
+                "description_raw": l.description_raw,
+            }
+            for l in listings
+        ]
+
+        try:
+            return self.claude.generate_all_listing_descriptions(
+                listings=listing_dicts,
+                voice_examples=self.voice.listing_examples[:6],
+                avoid_phrases=self.voice.avoid_phrases,
+            )
+        except Exception as e:
+            logger.error("Batch generation failed, falling back to individual", error=str(e))
+            # Fall back to individual generation
+            return [self._generate_listing_description(l) for l in listings]
+
     def _generate_listing_description(self, listing: Listing) -> str:
         """Generate a description for a single listing."""
         listing_dict = {
@@ -187,23 +229,22 @@ class NewsletterGenerator:
         neighborhood: str,
         listings: list[Listing],
     ) -> str:
-        """Generate a brief intro sentence for a neighborhood section."""
-        # For now, generate simple contextual intros
-        # Could be expanded to use Claude for more dynamic intros
+        """Generate a brief contextual intro for a neighborhood section."""
+        from src.generation.template_generator import TemplateNewsletterGenerator
+
         count = len(listings)
-        price_range = ""
-        if listings:
-            prices = [l.price for l in listings]
-            min_p = min(prices)
-            max_p = max(prices)
-            if min_p == max_p:
-                price_range = f"at ${min_p:,}"
-            else:
-                price_range = f"from ${min_p:,} to ${max_p:,}"
+        context = TemplateNewsletterGenerator.NEIGHBORHOOD_CONTEXT.get(neighborhood, "")
+
+        if context:
+            # Use the first sentence of neighborhood context
+            short_context = context.split(".")[0].rstrip(".")
+            if count == 1:
+                return f"{short_context}—one to look at this week."
+            return f"{short_context}. {count} this week."
 
         if count == 1:
-            return f"One listing {price_range} in {neighborhood}."
-        return f"{count} listings {price_range} across {neighborhood}."
+            return ""
+        return ""
 
     def _group_by_neighborhood(
         self,

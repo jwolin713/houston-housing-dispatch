@@ -89,6 +89,9 @@ class TemplateNewsletterGenerator:
         """Generate a complete newsletter from listings using templates."""
         logger.info("Generating newsletter with templates", listing_count=len(listings))
 
+        # Reset opener tracking for each new newsletter
+        self._used_openers.clear()
+
         if not title:
             title = self._generate_title(listings)
 
@@ -136,93 +139,171 @@ class TemplateNewsletterGenerator:
     def _generate_intro(self, listings: list[Listing]) -> str:
         """Generate the intro paragraph."""
         prices = [l.price for l in listings if l.price]
-        neighborhoods = list(set(l.neighborhood for l in listings if l.neighborhood))[:3]
+        neighborhoods = list(set(l.neighborhood for l in listings if l.neighborhood))
+        count = len(listings)
 
         min_price = min(prices) if prices else 0
         max_price = max(prices) if prices else 0
 
-        neighborhood_str = ", ".join(neighborhoods) if neighborhoods else "various Houston neighborhoods"
+        # Pick 2-3 neighborhoods to highlight
+        highlight_hoods = neighborhoods[:3]
+        hood_str = ", ".join(highlight_hoods[:-1]) + f" and {highlight_hoods[-1]}" if len(highlight_hoods) > 1 else (highlight_hoods[0] if highlight_hoods else "around the city")
 
-        intro = f"This week's edition features {len(listings)} properties "
-        intro += f"ranging from ${min_price:,} to ${max_price:,}. "
+        # Build a more varied intro based on what's interesting this week
+        spread = max_price - min_price if max_price and min_price else 0
 
-        if neighborhoods:
-            intro += f"We're seeing interesting options in {neighborhood_str}. "
-
-        # Add context based on price distribution
-        mid_price = (min_price + max_price) / 2
-        if mid_price < 350000:
-            intro += "There are several accessible options for first-time buyers this week."
-        elif mid_price < 500000:
-            intro += "The inventory shows a healthy mix of starter homes and upgrade options."
+        if spread > 1000000:
+            intro = (
+                f"The spread this week runs from ${min_price:,} to ${max_price:,}—"
+                f"{count} listings across {hood_str}. "
+            )
+        elif min_price < 300000 and max_price > 500000:
+            intro = (
+                f"{count} listings this week, from a ${min_price:,} entry point "
+                f"to ${max_price:,} in {hood_str}. "
+            )
         else:
-            intro += "This week skews toward higher-end properties in established neighborhoods."
+            intro = (
+                f"This week: {count} properties in {hood_str}, "
+                f"ranging from ${min_price:,} to ${max_price:,}. "
+            )
+
+        # Add a second sentence with neighborhood color
+        if highlight_hoods:
+            top_hood = highlight_hoods[0]
+            context = self.NEIGHBORHOOD_CONTEXT.get(top_hood, "")
+            if context:
+                short = context.split(".")[0].rstrip(".")
+                intro += f"{short}."
+            else:
+                intro += "Worth a scroll."
+        else:
+            intro += "Here's what caught our eye."
 
         return intro
 
+    def __init__(self):
+        self._used_openers: list[int] = []
+
     def _generate_listing_description(self, listing: Listing) -> str:
-        """Generate a description for a single listing."""
-        parts = []
-
-        # Property type context
-        prop_type = listing.property_type or "home"
-        if "condo" in prop_type.lower():
-            parts.append(f"This condo in {listing.neighborhood or 'Houston'}")
-        elif "townhome" in prop_type.lower() or "townhouse" in prop_type.lower():
-            parts.append(f"This townhome in {listing.neighborhood or 'Houston'}")
-        else:
-            parts.append(f"Located in {listing.neighborhood or 'Houston'}")
-
-        # Size and bedroom context
-        if listing.sqft:
-            if listing.sqft > 2500:
-                parts.append(f"offers generous space at {listing.sqft:,} square feet")
-            elif listing.sqft > 1500:
-                parts.append(f"provides solid living space with {listing.sqft:,} square feet")
-            else:
-                parts.append(f"delivers {listing.sqft:,} square feet")
-
-        # Bedroom/bath context
+        """Generate a description for a single listing using varied templates."""
+        neighborhood = listing.neighborhood or "Houston"
         beds = listing.bedrooms or 0
         baths = listing.bathrooms or 0
-        if beds >= 4:
-            parts.append(f"with {beds} bedrooms for a growing family")
-        elif beds == 3:
-            parts.append(f"with {beds} bedrooms and {baths} baths")
-        elif beds <= 2 and listing.price and listing.price < 300000:
-            parts.append("representing good value for the area")
+        sqft = listing.sqft or 0
+        price = listing.price or 0
+        year_built = listing.year_built
+        prop_type = (listing.property_type or "home").lower()
 
-        # Year built context
-        if listing.year_built:
-            if listing.year_built >= 2020:
-                parts.append("— newer construction with modern finishes")
-            elif listing.year_built >= 2000:
-                parts.append("in a building from the early 2000s")
-            elif listing.year_built < 1960:
-                parts.append("with the character of older Houston architecture")
+        # Get neighborhood context
+        hood_context = self.NEIGHBORHOOD_CONTEXT.get(neighborhood, "")
 
-        # Neighborhood-specific context
-        neighborhood = listing.neighborhood or ""
-        if neighborhood in self.NEIGHBORHOOD_CONTEXT:
-            # Add shortened neighborhood context
-            if "Heights" in neighborhood:
-                parts.append("where walkability to local shops and restaurants adds value")
-            elif "Montrose" in neighborhood:
-                parts.append("in one of Houston's most culturally vibrant areas")
-            elif "River Oaks" in neighborhood:
-                parts.append("in Houston's most prestigious address")
-            elif "EaDo" in neighborhood:
-                parts.append("near the growing restaurant scene and stadium district")
-
-        # Combine into a flowing description
-        if len(parts) >= 3:
-            desc = f"{parts[0]} {parts[1]}, {', '.join(parts[2:])}."
-        elif len(parts) == 2:
-            desc = f"{parts[0]} {parts[1]}."
-        elif parts:
-            desc = f"{parts[0]}."
+        # Determine property type label
+        if "condo" in prop_type:
+            type_label = "condo"
+        elif "townhome" in prop_type or "townhouse" in prop_type:
+            type_label = "townhome"
+        elif year_built and year_built < 1960:
+            type_label = "older home"
         else:
-            desc = f"A property worth considering at ${listing.price:,}."
+            type_label = "property"
+
+        # Build a pool of candidate descriptions, then pick the least-used pattern
+        candidates = []
+
+        # Pattern 0: Lead with neighborhood
+        if hood_context:
+            candidates.append(
+                f"{neighborhood}—{hood_context.lower().rstrip('.')}. "
+                f"This {type_label} brings {beds} bed / {baths} bath"
+                + (f" across {sqft:,} sqft." if sqft else ".")
+            )
+        else:
+            candidates.append(
+                f"A {beds}-bed, {baths}-bath {type_label} in {neighborhood}"
+                + (f" with {sqft:,} square feet." if sqft else ".")
+            )
+
+        # Pattern 1: Lead with size/value angle
+        if sqft and price:
+            price_per_sqft = price / sqft
+            if price_per_sqft < 200:
+                candidates.append(
+                    f"At ${price_per_sqft:.0f} per square foot, this {neighborhood} "
+                    f"{type_label} is priced below most of its neighbors. "
+                    f"{beds} beds, {baths} baths, {sqft:,} sqft."
+                )
+            else:
+                candidates.append(
+                    f"{sqft:,} square feet in {neighborhood} for ${price:,}. "
+                    f"{beds} beds and {baths} baths—worth a look if the neighborhood fits."
+                )
+        else:
+            candidates.append(
+                f"A {type_label} in {neighborhood} at ${price:,}. "
+                f"{beds} bed / {baths} bath."
+            )
+
+        # Pattern 2: Lead with year built / character
+        if year_built and year_built < 1970:
+            candidates.append(
+                f"Built in {year_built}, this {neighborhood} {type_label} has decades of "
+                f"character baked in. {beds} bed / {baths} bath"
+                + (f", {sqft:,} sqft." if sqft else ".")
+            )
+        elif year_built and year_built >= 2020:
+            candidates.append(
+                f"New construction ({year_built}) in {neighborhood}. "
+                f"{beds} bed / {baths} bath"
+                + (f" with {sqft:,} sqft of modern finishes." if sqft else ".")
+            )
+        else:
+            candidates.append(
+                f"{beds} bed, {baths} bath in {neighborhood}. "
+                + (f"{sqft:,} square feet" if sqft else "A solid footprint")
+                + f" at ${price:,}."
+            )
+
+        # Pattern 3: Lead with practical / honest take
+        if sqft and sqft < 1200:
+            candidates.append(
+                f"It's compact—{sqft:,} sqft, {beds} bed—but "
+                f"{neighborhood} location at ${price:,} is the draw here."
+            )
+        elif sqft and sqft > 3000:
+            candidates.append(
+                f"Big footprint for {neighborhood}: {sqft:,} sqft, "
+                f"{beds} bed / {baths} bath at ${price:,}. "
+                f"Room to spread out."
+            )
+        else:
+            candidates.append(
+                f"Straightforward {type_label} in {neighborhood}—"
+                f"{beds} bed, {baths} bath"
+                + (f", {sqft:,} sqft" if sqft else "")
+                + f". ${price:,}."
+            )
+
+        # Pick the pattern that hasn't been used recently
+        best_idx = 0
+        for i, _ in enumerate(candidates):
+            if i not in self._used_openers:
+                best_idx = i
+                break
+        else:
+            # All patterns used, reset and start over
+            self._used_openers.clear()
+            best_idx = 0
+
+        self._used_openers.append(best_idx)
+
+        desc = candidates[best_idx]
+
+        # Add neighborhood context as a second sentence if not already included
+        if hood_context and best_idx != 0:
+            # Shorten the context for a second sentence
+            short_context = hood_context.split(".")[0].rstrip(".")
+            desc += f" {short_context}."
 
         return desc
 

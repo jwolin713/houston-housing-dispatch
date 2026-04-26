@@ -202,7 +202,7 @@ Think: "Would a Curbed reader stop scrolling for this house?"
         avoid_phrases: list[str] | None = None,
     ) -> str:
         """
-        Generate a newsletter description for a listing.
+        Generate a newsletter description for a single listing.
 
         Args:
             listing: Dict with listing details
@@ -276,6 +276,124 @@ NEVER USE: "stunning," "gorgeous," "won't last long," "move-in ready," "must see
 real estate agent speak."""
 
         return self.complete(prompt, system=system, max_tokens=500, temperature=0.8)
+
+    def generate_all_listing_descriptions(
+        self,
+        listings: list[dict],
+        voice_examples: list[str],
+        avoid_phrases: list[str] | None = None,
+    ) -> list[str]:
+        """
+        Generate descriptions for ALL listings in a single call.
+
+        This produces better results than individual calls because the model
+        can vary sentence structure, openers, and rhythm across listings,
+        avoiding the repetitive patterns that emerge from isolated generation.
+
+        Args:
+            listings: List of listing dicts
+            voice_examples: Example descriptions to match style
+            avoid_phrases: List of generic phrases to avoid
+
+        Returns:
+            List of description strings, one per listing (same order as input)
+        """
+        if not listings:
+            return []
+
+        examples_text = "\n\n".join(f"Example {i+1}:\n{ex}" for i, ex in enumerate(voice_examples))
+
+        avoid_str = ""
+        if avoid_phrases:
+            avoid_str = f"\n\nPHRASES TO NEVER USE: {', '.join(avoid_phrases[:20])}"
+
+        # Build listing details block
+        listings_block = []
+        for i, listing in enumerate(listings, 1):
+            neighborhood = listing.get('neighborhood', 'N/A')
+            block = f"""LISTING {i}:
+- Address: {listing.get('address')}
+- Price: ${listing.get('price', 0):,}
+- Beds: {listing.get('bedrooms')} / Baths: {listing.get('bathrooms')}
+- Sqft: {listing.get('sqft', 'N/A')}
+- Year built: {listing.get('year_built', 'N/A')}
+- Neighborhood: {neighborhood}
+- Type: {listing.get('property_type', 'N/A')}
+- HAR description: {listing.get('description_raw', 'N/A')}"""
+            listings_block.append(block)
+
+        all_listings_text = "\n\n".join(listings_block)
+
+        prompt = f"""Write newsletter descriptions for these {len(listings)} Houston listings.
+
+{all_listings_text}
+
+REQUIREMENTS FOR EACH DESCRIPTION:
+1. 2-4 sentences, observational insider tone
+2. Lead with what makes the property notable or interesting
+3. Include at least ONE specific, memorable detail
+4. Connect to the neighborhood—what's it like to actually live there?
+
+CRITICAL — VARIETY AND FLOW:
+You are writing these as part of ONE newsletter. Readers will see them all together.
+- VARY your sentence openers. Do NOT start multiple descriptions the same way.
+- VARY sentence length and rhythm. Mix short punchy sentences with longer ones.
+- VARY your angle of approach: lead with the building on one, the neighborhood on another, the lot on a third, an honest observation on a fourth.
+- If two listings are in the same neighborhood, differentiate them—don't repeat the same neighborhood context.
+- Avoid structural repetition. If one listing uses "[Feature], which means [benefit]", don't use that pattern again.
+
+EXAMPLE DESCRIPTIONS TO MATCH (for voice, not structure—don't copy these patterns verbatim):
+
+{examples_text}
+{avoid_str}
+
+FORMAT: Return each description separated by "---". Just the descriptions, no headers, prices, or listing numbers. The order must match the listing order above."""
+
+        system = """You are writing for the Houston Housing Dispatch newsletter.
+
+VOICE: Knowledgeable Houston insider—like Curbed, Brownstoner, or local food critics
+like Alison Cook and Erica Chen. Someone who's watched neighborhoods evolve and
+knows every street in the Inner Loop.
+
+PHILOSOPHY: "Interesting houses that can become long-lasting homes"
+Not investment returns or flipping potential. Character, quality, and fit.
+
+TONE:
+- Conversational insider (like texts from a friend who knows Houston real estate)
+- Observational (notice details others miss)
+- Practical (parking, layout, condition, what actually matters)
+- Light editorial wit (occasional commentary without snark)
+
+CRITICAL RULES:
+1. Every description MUST include neighborhood context.
+2. Each description must feel different from the others—vary your sentence structure,
+   openers, length, and approach. A reader should never think "this sounds like the
+   last one." Think of each listing as a different paragraph in a magazine feature.
+3. NEVER USE: "stunning," "gorgeous," "won't last long," "move-in ready," "must see,"
+   "perfect for entertaining," "close to everything," "dream home," or any generic
+   real estate agent speak."""
+
+        # Scale max_tokens based on listing count (roughly 150 tokens per listing + overhead)
+        max_tokens = min(len(listings) * 200 + 200, 8000)
+
+        result = self.complete(prompt, system=system, max_tokens=max_tokens, temperature=0.8)
+
+        # Parse the "---" separated descriptions
+        descriptions = [d.strip() for d in result.split("---") if d.strip()]
+
+        # If parsing didn't produce the right count, try to salvage
+        if len(descriptions) != len(listings):
+            logger.warning(
+                "Batch description count mismatch",
+                expected=len(listings),
+                got=len(descriptions),
+            )
+            # Pad with empty strings or truncate
+            while len(descriptions) < len(listings):
+                descriptions.append("")
+            descriptions = descriptions[:len(listings)]
+
+        return descriptions
 
     def generate_newsletter_intro(
         self,
@@ -418,12 +536,27 @@ VOICE GUIDELINES:
 - Practical focus—parking, layout, condition, what matters to buyers
 - Light editorial wit—occasional commentary without snark
 
+YOUR #1 PRIORITY: ELIMINATE REPETITIVE STRUCTURE.
+Read through the entire draft and identify repeated patterns:
+- Sentence openers that appear more than once (e.g., "The lot is...", "You're close to...")
+- Structural templates used across listings (e.g., "[Feature], which means [benefit]")
+- Repeated transitional phrases or rhythms
+- Same types of observations in the same order (building → neighborhood → practical note)
+
+Fix these by:
+- Varying how descriptions start: some with the building, some with the neighborhood,
+  some with a practical observation, some with an honest editorial take
+- Mixing sentence lengths: a short punchy sentence, then a longer flowing one
+- Using different connective tissue: em dashes, parenthetical asides, direct address
+- Occasionally breaking the pattern entirely with a one-sentence description or a
+  slightly longer treatment for a standout property
+
 WHAT YOU CAN CHANGE:
 - Rewrite listing descriptions to be more distinctive
-- Add connecting sentences between neighborhood sections
+- Add brief connecting sentences between neighborhood sections
 - Strengthen the intro to hook readers
-- Improve flow and variety in sentence structure
 - Remove any generic real estate language that slipped through
+- Restructure descriptions that feel samey
 
 WHAT YOU CANNOT CHANGE (these are factual and must appear exactly):
 - Prices (dollar amounts)
@@ -434,8 +567,8 @@ WHAT YOU CANNOT CHANGE (these are factual and must appear exactly):
 - HAR links
 - Neighborhood names
 
-CRITICAL: Create narrative flow between sections. The newsletter should feel like
-one cohesive piece, not a list of disconnected listings."""
+The newsletter should read like a magazine column, not a list of property descriptions
+that were generated from the same template."""
 
         logger.info("Running editorial pass on newsletter")
         return self.complete(prompt, system=system, max_tokens=8000, temperature=0.7)
