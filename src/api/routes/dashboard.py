@@ -187,6 +187,26 @@ async def send_approval_email(newsletter_id: int):
         return result
 
 
+@router.post("/reset-listings")
+async def reset_listing_statuses():
+    """Reset all selected/scored listings back to 'new' so the pipeline can re-curate."""
+    with get_db() as db:
+        updated = (
+            db.query(Listing)
+            .filter(
+                Listing.status.in_([
+                    ListingStatus.SCORED,
+                    ListingStatus.SELECTED,
+                ])
+            )
+            .update(
+                {Listing.status: ListingStatus.NEW, Listing.selected_for_newsletter_id: None},
+                synchronize_session="fetch",
+            )
+        )
+        return {"success": True, "reset_count": updated}
+
+
 @router.get("/recent-listings")
 async def get_recent_listings(
     limit: int = Query(20, ge=1, le=100),
