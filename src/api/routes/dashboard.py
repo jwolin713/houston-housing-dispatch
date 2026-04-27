@@ -182,8 +182,7 @@ async def send_approval_email(newsletter_id: int):
             return {"success": False, "error": "Newsletter not found"}
 
         workflow = ApprovalWorkflow()
-        base_url = f"https://web-production-77eff.up.railway.app"
-        result = workflow.send_for_approval(db, newsletter, base_url=base_url)
+        result = workflow.send_for_approval(db, newsletter, base_url=settings.base_url)
         return result
 
 

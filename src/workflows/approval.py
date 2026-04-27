@@ -166,33 +166,31 @@ class ApprovalWorkflow:
             # Check Substack health first
             health = self.publisher.check_health()
 
-            if health.get("healthy"):
+            post_url = None
+            if health.get("healthy") and newsletter.substack_draft_id:
                 result = self.publisher.publish_draft(newsletter.substack_draft_id)
+                if not result.success:
+                    # Rollback to pending_approval
+                    newsletter.status = NewsletterStatus.PENDING_APPROVAL
+                    newsletter.approved_at = None
+                    newsletter.version += 1
+                    return {
+                        "success": False,
+                        "error": f"Publish failed: {result.error}",
+                    }
+                post_url = result.post_url
             else:
                 logger.warning(
-                    "Substack unhealthy, using fallback",
+                    "Substack unavailable or no draft ID, marking as published without auto-publish",
                     newsletter_id=newsletter.id,
+                    healthy=health.get("healthy"),
+                    has_draft_id=bool(newsletter.substack_draft_id),
                 )
-                result = self._fallback_publisher.create_draft(
-                    title=newsletter.title,
-                    content_html=newsletter.content_html,
-                )
-
-            if not result.success:
-                # Rollback to pending_approval
-                newsletter.status = NewsletterStatus.PENDING_APPROVAL
-                newsletter.approved_at = None
-                newsletter.version += 1
-
-                return {
-                    "success": False,
-                    "error": f"Publish failed: {result.error}",
-                }
 
             # Phase 3: Mark as published
             newsletter.status = NewsletterStatus.PUBLISHED
             newsletter.published_at = datetime.utcnow()
-            newsletter.substack_post_url = result.post_url
+            newsletter.substack_post_url = post_url
             newsletter.version += 1
 
             logger.info(

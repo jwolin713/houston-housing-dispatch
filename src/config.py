@@ -45,6 +45,7 @@ class Settings(BaseSettings):
 
     # Application
     secret_key: str
+    base_url: str = "http://localhost:8000"
     database_url: str = "sqlite:///data/houston_dispatch.db"
 
     # Scheduling

@@ -127,9 +127,7 @@ def run_daily_pipeline():
             approval_result = workflow.send_for_approval(
                 db,
                 newsletter,
-                base_url=settings.substack_publication_url.replace(
-                    ".substack.com", "-api.vercel.app"
-                ),  # Adjust based on your deployment
+                base_url=settings.base_url,
             )
 
             # Capture values before session closes
