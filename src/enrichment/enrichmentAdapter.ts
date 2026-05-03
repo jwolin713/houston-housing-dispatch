@@ -1,0 +1,51 @@
+import type { AppConfig } from "../config/index.js";
+import type { ListingRecord } from "../types/domain.js";
+import type { ApifyClient } from "../integrations/apify/client.js";
+import { mapZillowDetails } from "./zillowDetailsMapper.js";
+import { newId } from "../util/id.js";
+
+export type EnrichmentMappedFields = Partial<ReturnType<typeof mapZillowDetails>>;
+
+export interface EnrichmentAdapter {
+  enrich(listing: ListingRecord): Promise<{
+    payload: unknown;
+    mappedFields: EnrichmentMappedFields;
+  }>;
+}
+
+export class ApifyZillowEnrichmentAdapter implements EnrichmentAdapter {
+  constructor(
+    private readonly config: AppConfig["apify"],
+    private readonly apify: ApifyClient
+  ) {}
+
+  async enrich(listing: ListingRecord) {
+    if (!this.config.zillowActorId) {
+      throw new Error("Missing required configuration: APIFY_ZILLOW_ACTOR_ID");
+    }
+
+    const [payload] = await this.apify.runActor(this.config.zillowActorId, {
+      startUrls: [{ url: listing.sourceUrl }]
+    });
+
+    if (!payload) {
+      throw new Error(`No enrichment result returned for listing ${listing.id}`);
+    }
+
+    return {
+      payload,
+      mappedFields: mapZillowDetails(payload)
+    };
+  }
+}
+
+export function createEnrichmentSnapshot(listing: ListingRecord, enrichment: Awaited<ReturnType<EnrichmentAdapter["enrich"]>>) {
+  return {
+    id: newId("enr"),
+    listingId: listing.id,
+    provider: "apify-zillow" as const,
+    payload: enrichment.payload,
+    mappedFields: enrichment.mappedFields,
+    createdAt: new Date().toISOString()
+  };
+}
