@@ -16,10 +16,8 @@ export function assembleIssueRun(
   scores: EditorialScore[],
   now = new Date()
 ): AssembledIssue {
-  const allowedNeighborhoods = new Set(config.neighborhoods.map((neighborhood) => neighborhood.toLowerCase()));
-  const scopedListings = listings.filter(
-    (listing) => listing.neighborhood && allowedNeighborhoods.has(listing.neighborhood.toLowerCase())
-  );
+  const scoredIds = new Set(scores.map((score) => score.listingId));
+  const scopedListings = listings.filter((listing) => scoredIds.has(listing.id));
   const scopedIds = new Set(scopedListings.map((listing) => listing.id));
   const selectedScores = scores.filter((score) => score.selected && scopedIds.has(score.listingId));
   const rejectedScores = scores.filter((score) => !score.selected && scopedIds.has(score.listingId));
@@ -31,7 +29,7 @@ export function assembleIssueRun(
     .filter(isListing);
 
   if (scopedListings.length === 0) {
-    throw new Error("No scored candidates exist for the configured neighborhoods.");
+    throw new Error("No scored candidates exist for issue assembly.");
   }
 
   const timestamp = now.toISOString();

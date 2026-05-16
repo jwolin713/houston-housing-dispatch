@@ -46,11 +46,11 @@ const scores: EditorialScore[] = [
 ];
 
 describe("assembleIssueRun", () => {
-  it("includes only configured neighborhoods", () => {
+  it("includes scored listings without requiring exact broad neighborhood labels", () => {
     const issue = assembleIssueRun(loadConfig({ DISPATCH_NEIGHBORHOODS: "Heights" }), listings, scores);
 
-    expect(issue.selectedListings.map((listing) => listing.id)).toEqual(["lst_1"]);
+    expect(issue.selectedListings.map((listing) => listing.id)).toEqual(["lst_1", "lst_2"]);
     expect(issue.issueRun.neighborhoods).toEqual(["Heights"]);
-    expect(issue.marketSummary).toContain("Heights");
+    expect(issue.marketSummary).toContain("Heights, Katy");
   });
 });

@@ -51,4 +51,25 @@ describe("selectCandidates", () => {
     expect(result.rejected).toHaveLength(1);
     expect(result.rejected[0].rejectionReason).toContain("does not show a clear");
   });
+
+  it("marks above-threshold listings outside the selection cap as rejected", () => {
+    const result = selectCandidates(
+      [
+        {
+          listing: listing("lst_1"),
+          enrichment: { price: 650000, squareFeet: 2400, lotSquareFeet: 7000, beds: 3, baths: 2 }
+        },
+        {
+          listing: listing("lst_2"),
+          enrichment: { price: 650000, squareFeet: 2400, lotSquareFeet: 7000, beds: 3, baths: 2 }
+        }
+      ],
+      { minimumScore: 3, maxSelected: 1, now: new Date("2026-05-03T00:00:00.000Z") }
+    );
+
+    expect(result.selected).toHaveLength(1);
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected[0].selected).toBe(false);
+    expect(result.rejected[0].rejectionReason).toContain("not enough to beat the issue threshold");
+  });
 });

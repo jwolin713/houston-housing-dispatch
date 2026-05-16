@@ -16,8 +16,10 @@ const HAR_HOMEDETAIL_PATTERN = /https?:\/\/(?:www\.)?har\.com\/homedetail\/[^\s"
 export function parseHarEmail(message: GmailMessage): ParsedHarListing[] {
   const raw = `${message.subject ?? ""}\n${message.text}\n${message.html ?? ""}`;
   const body = normalizeWhitespace(raw);
-  const listingUrls = unique((raw.match(HAR_HOMEDETAIL_PATTERN) ?? []).map(cleanUrl));
-  const savedSearchListings = parseSavedSearchDigest(body, listingUrls);
+  const savedSearchListings = parseSavedSearchDigest(
+    normalizeWhitespace(`${message.subject ?? ""}\n${message.text}`),
+    unique(((message.html ?? "").match(HAR_HOMEDETAIL_PATTERN) ?? []).map(cleanUrl))
+  );
   if (savedSearchListings.length > 0) {
     return savedSearchListings;
   }

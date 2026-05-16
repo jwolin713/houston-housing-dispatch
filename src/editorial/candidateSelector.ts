@@ -21,27 +21,43 @@ export function selectCandidates(
   const createdAt = (options.now ?? new Date()).toISOString();
   const scored = candidates.map(({ listing, enrichment }) => {
     const scoring = scoreListing({ listing, enrichment });
-    const selected = scoring.score >= options.minimumScore;
 
     return {
-      listingId: listing.id,
-      selected,
-      score: scoring.score,
-      angles: scoring.hits.map((hit) => hit.angle),
-      rationale: selected ? buildSelectedRationale(listing, scoring) : "",
-      rejectionReason: selected ? undefined : buildRejectionReason(listing, scoring),
-      createdAt
-    } satisfies EditorialScore;
+      listing,
+      scoring,
+      score: scoring.score
+    };
   });
 
-  const selected = scored
-    .filter((score) => score.selected)
+  const selectedCandidates = scored
+    .filter((candidate) => candidate.score >= options.minimumScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, options.maxSelected);
-  const selectedIds = new Set(selected.map((score) => score.listingId));
+  const selectedIds = new Set(selectedCandidates.map((candidate) => candidate.listing.id));
+
+  const selected = selectedCandidates.map(({ listing, scoring }) => ({
+      listingId: listing.id,
+      selected: true,
+      score: scoring.score,
+      angles: scoring.hits.map((hit) => hit.angle),
+      rationale: buildSelectedRationale(listing, scoring),
+      createdAt
+    } satisfies EditorialScore));
+
+  const rejected = scored
+    .filter((candidate) => !selectedIds.has(candidate.listing.id))
+    .map(({ listing, scoring }) => ({
+      listingId: listing.id,
+      selected: false,
+      score: scoring.score,
+      angles: scoring.hits.map((hit) => hit.angle),
+      rationale: "",
+      rejectionReason: buildRejectionReason(listing, scoring),
+      createdAt
+    } satisfies EditorialScore));
 
   return {
     selected,
-    rejected: scored.filter((score) => !selectedIds.has(score.listingId))
+    rejected
   };
 }

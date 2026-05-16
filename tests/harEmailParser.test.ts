@@ -66,4 +66,25 @@ describe("parseHarEmail", () => {
       }
     ]);
   });
+
+  it("ignores duplicated listing text in saved search HTML when pairing URLs", () => {
+    const listings = parseHarEmail({
+      id: "msg-4",
+      subject: "HAR.com Saved Search Notification (May 16, 2026)",
+      text:
+        "Saved Search Notification New Listing " +
+        "4131 De George St, Houston TX 77009 Located in George Heights 3 bedrooms 2 full bathroom 2,000 sqft $450,000 For Sale - Active View Listing " +
+        "New Listing 3754 Carlon St, Houston TX 77005 Located in Sunset Terrace 4 bedrooms 3 full bathroom 3,000 sqft $1,000,000 For Sale - Active View Listing",
+      html:
+        "New Listing 4131 De George St, Houston TX 77009 View Listing " +
+        '<a href="https://www.har.com/homedetail/4131-de-george-st-houston-tx-77009/1?lid=1">View Listing</a>' +
+        "New Listing 3754 Carlon St, Houston TX 77005 View Listing " +
+        '<a href="https://www.har.com/homedetail/3754-carlon-st-houston-tx-77005/2?lid=2">View Listing</a>'
+    });
+
+    expect(listings.map((listing) => [listing.address, listing.sourceUrl])).toEqual([
+      ["4131 De George St", "https://www.har.com/homedetail/4131-de-george-st-houston-tx-77009/1?lid=1"],
+      ["3754 Carlon St", "https://www.har.com/homedetail/3754-carlon-st-houston-tx-77005/2?lid=2"]
+    ]);
+  });
 });
