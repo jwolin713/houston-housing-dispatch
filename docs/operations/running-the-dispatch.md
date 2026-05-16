@@ -32,6 +32,16 @@ To inspect what landed:
 npm run dev -- db-summary
 ```
 
+## Zillow Enrichment
+
+After filling in `APIFY_TOKEN` and `APIFY_ZILLOW_ACTOR_ID`, test enrichment with one listing first:
+
+```bash
+npm run dev -- enrich --limit 1
+```
+
+Increase the limit only after the first actor run returns useful mapped fields.
+
 ## Real Integrations
 
 - Gmail intake uses the Gmail API with read-only OAuth credentials and scans messages matching `GMAIL_QUERY`.

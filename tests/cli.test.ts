@@ -47,6 +47,7 @@ describe("createProgram", () => {
           listingsStored: 1,
           parseFailures: []
         }),
+        runEnrichment: async () => ({ attempted: 0, enriched: 0, failed: [] }),
         sampleGmailMessages: async () => [],
         writeLine: (message) => output.push(message)
       });
@@ -85,6 +86,7 @@ describe("createProgram", () => {
         openDatabase,
         applyInitialMigration,
         summarizeDatabase,
+        runEnrichment: async () => ({ attempted: 0, enriched: 0, failed: [] }),
         sampleGmailMessages: async () => [],
         writeLine: (message) => output.push(message)
       });
@@ -107,6 +109,7 @@ describe("createProgram", () => {
     const program = createProgram({
       loadConfig: () => loadConfig({ GMAIL_QUERY: "from:(har.com)" }),
       createGmailClient: () => ({} as GmailClient),
+      runEnrichment: async () => ({ attempted: 0, enriched: 0, failed: [] }),
       sampleGmailMessages: async () => [
         {
           id: "msg-1",
@@ -128,5 +131,37 @@ describe("createProgram", () => {
           excerpt: "See https://www.har.com/homedetail/example/1"
         }
     ]);
+  });
+
+  it("runs limited enrichment through the command path", async () => {
+    const { dir, dbPath } = tempDbPath("dispatch-cli-enrich-");
+    const output: string[] = [];
+    let observedLimit: number | undefined;
+    try {
+      const program = createProgram({
+        loadConfig: () =>
+          loadConfig({
+            DISPATCH_DB_PATH: dbPath,
+            APIFY_TOKEN: "token",
+            APIFY_ZILLOW_ACTOR_ID: "actor"
+          }),
+        openDatabase,
+        applyInitialMigration,
+        createApifyClient: () => ({ async runActor() { return []; } }),
+        runEnrichment: async (_db, _adapter, options) => {
+          observedLimit = options?.limit;
+          return { attempted: 1, enriched: 1, failed: [] };
+        },
+        sampleGmailMessages: async () => [],
+        writeLine: (message) => output.push(message)
+      });
+
+      await program.parseAsync(["enrich", "--limit", "2"], { from: "user" });
+
+      expect(observedLimit).toBe(2);
+      expect(JSON.parse(output[0])).toEqual({ attempted: 1, enriched: 1, failed: [] });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

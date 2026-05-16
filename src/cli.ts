@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config/index.js";
 import { applyInitialMigration, openDatabase } from "./db/index.js";
 import { summarizeDatabase } from "./db/summary.js";
+import { ApifyZillowEnrichmentAdapter } from "./enrichment/enrichmentAdapter.js";
+import { runEnrichment } from "./enrichment/runEnrichment.js";
+import { ApifyApiClient, type ApifyClient } from "./integrations/apify/client.js";
 import { GmailApiClient, type GmailClient } from "./integrations/gmail/client.js";
 import { sampleGmailMessages } from "./intake/gmailSampler.js";
 import { runIntake } from "./intake/runIntake.js";
@@ -15,8 +18,10 @@ interface CliDependencies {
   applyInitialMigration: typeof applyInitialMigration;
   runDryDispatch: typeof runDryDispatch;
   runIntake: typeof runIntake;
+  runEnrichment: typeof runEnrichment;
   sampleGmailMessages: typeof sampleGmailMessages;
   createGmailClient(config: ReturnType<typeof loadConfig>["gmail"]): GmailClient;
+  createApifyClient(config: ReturnType<typeof loadConfig>["apify"]): ApifyClient;
   summarizeDatabase: typeof summarizeDatabase;
   writeLine(message: string): void;
 }
@@ -27,8 +32,10 @@ const defaultDependencies: CliDependencies = {
   applyInitialMigration,
   runDryDispatch,
   runIntake,
+  runEnrichment,
   sampleGmailMessages,
   createGmailClient: (config) => new GmailApiClient(config),
+  createApifyClient: (config) => new ApifyApiClient(config),
   summarizeDatabase,
   writeLine: (message) => console.log(message)
 };
@@ -98,6 +105,27 @@ export function createProgram(dependencies: Partial<CliDependencies> = {}): Comm
         excerptLength
       });
       deps.writeLine(JSON.stringify(samples, null, 2));
+    });
+
+  program
+    .command("enrich")
+    .description("Enrich candidate listings with Zillow details through Apify")
+    .option("-l, --limit <number>", "Maximum listings to enrich in this run", "1")
+    .action(async (options: { limit: string }) => {
+      const config = deps.loadConfig();
+      const db = deps.openDatabase(config.dbPath);
+      try {
+        deps.applyInitialMigration(db);
+        const limit = positiveInt(options.limit, 1);
+        const result = await deps.runEnrichment(
+          db,
+          new ApifyZillowEnrichmentAdapter(config.apify, deps.createApifyClient(config.apify)),
+          { limit }
+        );
+        deps.writeLine(JSON.stringify(result, null, 2));
+      } finally {
+        db.close();
+      }
     });
 
   program

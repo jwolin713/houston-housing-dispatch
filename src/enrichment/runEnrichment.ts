@@ -10,10 +10,14 @@ export interface EnrichmentRunResult {
   failed: Array<{ listingId: string; error: string }>;
 }
 
-export async function runEnrichment(db: DispatchDb, adapter: EnrichmentAdapter): Promise<EnrichmentRunResult> {
+export async function runEnrichment(
+  db: DispatchDb,
+  adapter: EnrichmentAdapter,
+  options: { limit?: number } = {}
+): Promise<EnrichmentRunResult> {
   const listings = new ListingRepository(db);
   const enrichments = new EnrichmentRepository(db);
-  const candidates = listings.candidatesForEnrichment();
+  const candidates = listings.candidatesForEnrichment().slice(0, options.limit);
   const result: EnrichmentRunResult = { attempted: candidates.length, enriched: 0, failed: [] };
 
   for (const listing of candidates) {
