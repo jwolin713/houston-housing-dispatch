@@ -33,4 +33,29 @@ describe("mapZillowDetails", () => {
     expect(mapped.lotSquareFeet).toBeUndefined();
     expect(mapped.yearBuilt).toBeUndefined();
   });
+
+  it("maps address-based actor payload fields", () => {
+    const mapped = mapZillowDetails({
+      streetAddress: "2314 Huldy St B",
+      photoUrls: ["https://example.com/photo-1.jpg"],
+      lotSize: 1400
+    });
+
+    expect(mapped.address).toBe("2314 Huldy St B");
+    expect(mapped.photoUrls).toEqual(["https://example.com/photo-1.jpg"]);
+    expect(mapped.lotSquareFeet).toBe(1400);
+  });
+
+  it("maps nested address payload fields", () => {
+    const mapped = mapZillowDetails({
+      address: {
+        streetAddress: "2314 Huldy St B",
+        city: "Houston",
+        state: "TX",
+        zipcode: "77019"
+      }
+    });
+
+    expect(mapped.address).toBe("2314 Huldy St B, Houston, TX, 77019");
+  });
 });

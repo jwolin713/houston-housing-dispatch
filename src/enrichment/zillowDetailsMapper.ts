@@ -12,7 +12,17 @@ const ZillowDetailsSchema = z
     homeType: z.string().optional(),
     propertyType: z.string().optional(),
     description: z.string().optional(),
-    address: z.string().optional(),
+    address: z.union([
+      z.string(),
+      z.object({
+        streetAddress: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        zipcode: z.string().optional()
+      })
+    ]).optional(),
+    streetAddress: z.string().optional(),
+    photoUrls: z.array(z.string()).optional(),
     photos: z.array(z.union([z.string(), z.object({ url: z.string().optional() })])).optional()
   })
   .passthrough();
@@ -23,7 +33,7 @@ export function mapZillowDetails(payload: unknown) {
   const parsed = ZillowDetailsSchema.parse(payload);
 
   return {
-    address: parsed.address,
+    address: normalizeAddress(parsed.address) ?? parsed.streetAddress,
     price: toNumber(parsed.price),
     beds: toNumber(parsed.bedrooms),
     baths: toNumber(parsed.bathrooms),
@@ -32,8 +42,16 @@ export function mapZillowDetails(payload: unknown) {
     yearBuilt: toNumber(parsed.yearBuilt),
     propertyType: parsed.propertyType ?? parsed.homeType,
     description: parsed.description,
-    photoUrls: parsed.photos?.map((photo) => (typeof photo === "string" ? photo : photo.url)).filter(isString)
+    photoUrls:
+      parsed.photoUrls ?? parsed.photos?.map((photo) => (typeof photo === "string" ? photo : photo.url)).filter(isString)
   };
+}
+
+function normalizeAddress(address: ZillowDetailsPayload["address"]): string | undefined {
+  if (!address) return undefined;
+  if (typeof address === "string") return address;
+
+  return [address.streetAddress, address.city, address.state, address.zipcode].filter(isString).join(", ");
 }
 
 function toNumber(value: string | number | undefined): number | undefined {

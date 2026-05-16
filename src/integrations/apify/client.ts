@@ -1,7 +1,14 @@
 import { requireConfigValue, type AppConfig } from "../../config/index.js";
 
 export interface ApifyActorInput {
-  startUrls: Array<{ url: string }>;
+  startUrls?: Array<{ url: string }>;
+  propertyStatus?: string;
+  property_url?: string[];
+  zpid?: string[];
+  address?: string[];
+  maxItems?: number;
+  timeoutSecs?: number;
+  requestTimeoutSecs?: number;
 }
 
 export interface ApifyClient {

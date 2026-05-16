@@ -34,7 +34,13 @@ npm run dev -- db-summary
 
 ## Zillow Enrichment
 
-After filling in `APIFY_TOKEN` and `APIFY_ZILLOW_ACTOR_ID`, test enrichment with one listing first:
+After filling in `APIFY_TOKEN`, set:
+
+```bash
+APIFY_ZILLOW_ACTOR_ID=kawsar/affordable-zillow-details-scraper
+```
+
+Then test enrichment with one listing first:
 
 ```bash
 npm run dev -- enrich --limit 1
