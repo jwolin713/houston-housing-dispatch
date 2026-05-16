@@ -23,6 +23,23 @@ describe("rationale builders", () => {
     expect(rationale).toContain("Rare lot signal");
   });
 
+  it("uses distinct angles in selected rationale", () => {
+    const rationale = buildSelectedRationale(listing, {
+      score: 4,
+      hits: [
+        { angle: "value_mismatch", points: 2.5, note: "Unusual value signal." },
+        { angle: "buyer_usefulness", points: 0.5, note: "Practical bed/bath mix." },
+        { angle: "buyer_usefulness", points: 1.25, note: "Private driveway." },
+        { angle: "tradeoff", points: 2, note: "Real tradeoff." }
+      ]
+    });
+
+    expect(rationale).toContain("Unusual value signal.");
+    expect(rationale).toContain("Practical bed/bath mix.");
+    expect(rationale).toContain("Real tradeoff.");
+    expect(rationale).not.toContain("Private driveway.");
+  });
+
   it("explains rejected listings without generic phrasing", () => {
     const reason = buildRejectionReason(listing, { score: 0, hits: [] });
 

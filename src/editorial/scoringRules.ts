@@ -20,6 +20,8 @@ export interface ScoringResult {
 const INNER_LOOP_PRICE_PER_SQFT_REFERENCE = 330;
 const RARE_LOT_THRESHOLD = 5000;
 const OLD_HOME_YEAR_THRESHOLD = 1940;
+const STRONG_VALUE_MULTIPLIER = 0.76;
+const MODEST_VALUE_MULTIPLIER = 0.88;
 
 export function scoreListing(input: ScoringInput): ScoringResult {
   const facts = mergeFacts(input);
@@ -34,34 +36,48 @@ export function scoreListing(input: ScoringInput): ScoringResult {
   }
 
   const pricePerSqft = facts.price && facts.squareFeet ? facts.price / facts.squareFeet : undefined;
-  if (pricePerSqft && pricePerSqft < INNER_LOOP_PRICE_PER_SQFT_REFERENCE * 0.88) {
+  if (pricePerSqft && pricePerSqft < INNER_LOOP_PRICE_PER_SQFT_REFERENCE * STRONG_VALUE_MULTIPLIER) {
     hits.push({
       angle: "value_mismatch",
-      points: 2,
-      note: `Value mismatch signal: about $${Math.round(pricePerSqft)}/sq ft.`
+      points: 2.5,
+      note: `Unusual value signal: about $${Math.round(pricePerSqft)}/sq ft.`
+    });
+  } else if (pricePerSqft && pricePerSqft < INNER_LOOP_PRICE_PER_SQFT_REFERENCE * MODEST_VALUE_MULTIPLIER) {
+    hits.push({
+      angle: "value_mismatch",
+      points: 1.25,
+      note: `Modest value signal: about $${Math.round(pricePerSqft)}/sq ft.`
     });
   }
 
   if (facts.yearBuilt && facts.yearBuilt <= OLD_HOME_YEAR_THRESHOLD) {
     hits.push({
       angle: "character",
-      points: 1.5,
+      points: 2,
       note: `Character signal: older home built around ${facts.yearBuilt}.`
     });
   }
 
-  if (facts.description && /teardown|as-is|needs work|renovation|investor|lot value/i.test(facts.description)) {
+  if (facts.description && /featured|architect|published|custom|historic|bungalow|craftsman|mid[- ]century|london inspired/i.test(facts.description)) {
+    hits.push({
+      angle: "character",
+      points: 2,
+      note: "Character signal: description points to design, architectural, or old-house interest."
+    });
+  }
+
+  if (facts.description && /teardown|as-is|needs work|renovation|investor|lot value|tradeoffs?|limited parking|congestion/i.test(facts.description)) {
     hits.push({
       angle: "tradeoff",
-      points: 1.5,
-      note: "Tradeoff signal: description suggests condition or redevelopment tension."
+      points: 2,
+      note: "Tradeoff signal: description suggests condition, redevelopment, or everyday-location tension."
     });
   }
 
   if (facts.neighborhood && /heights|montrose|rice military|museum|west university|eado/i.test(facts.neighborhood)) {
     hits.push({
       angle: "location_hook",
-      points: 1,
+      points: 0.75,
       note: `Location hook: ${facts.neighborhood}.`
     });
   }
@@ -69,8 +85,16 @@ export function scoreListing(input: ScoringInput): ScoringResult {
   if (facts.beds && facts.beds >= 3 && facts.baths && facts.baths >= 2 && facts.squareFeet && facts.squareFeet >= 1600) {
     hits.push({
       angle: "buyer_usefulness",
-      points: 1,
+      points: 0.5,
       note: "Buyer-usefulness signal: practical bed/bath/size mix."
+    });
+  }
+
+  if (facts.description && /private driveway|first floor|first-floor|corner unit|corner home|actual yard|backyard|balcony|garage apartment|guest quarters/i.test(facts.description)) {
+    hits.push({
+      angle: "buyer_usefulness",
+      points: 1.25,
+      note: "Buyer-usefulness signal: description names a specific layout, parking, or outdoor-life advantage."
     });
   }
 

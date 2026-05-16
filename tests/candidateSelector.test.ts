@@ -72,4 +72,47 @@ describe("selectCandidates", () => {
     expect(result.rejected[0].selected).toBe(false);
     expect(result.rejected[0].rejectionReason).toContain("not enough to beat the issue threshold");
   });
+
+  it("does not select value-only listings without a stronger editorial hook", () => {
+    const result = selectCandidates(
+      [
+        {
+          listing: listing("lst_1", "Unknown"),
+          enrichment: {
+            price: 470000,
+            squareFeet: 2400,
+            beds: 3,
+            baths: 2,
+            yearBuilt: 2024,
+            description: "New construction with modern finishes."
+          }
+        }
+      ],
+      { minimumScore: 3, maxSelected: 10, now: new Date("2026-05-03T00:00:00.000Z") }
+    );
+
+    expect(result.selected).toHaveLength(0);
+    expect(result.rejected[0].score).toBeGreaterThanOrEqual(3);
+    expect(result.rejected[0].selected).toBe(false);
+  });
+
+  it("selects strong value when it also has a location hook", () => {
+    const result = selectCandidates(
+      [
+        {
+          listing: listing("lst_1", "Studemont Heights"),
+          enrichment: {
+            price: 470000,
+            squareFeet: 2400,
+            beds: 3,
+            baths: 2,
+            yearBuilt: 2024
+          }
+        }
+      ],
+      { minimumScore: 3, maxSelected: 10, now: new Date("2026-05-03T00:00:00.000Z") }
+    );
+
+    expect(result.selected).toHaveLength(1);
+  });
 });

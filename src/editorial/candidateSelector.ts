@@ -30,7 +30,7 @@ export function selectCandidates(
   });
 
   const selectedCandidates = scored
-    .filter((candidate) => candidate.score >= options.minimumScore)
+    .filter((candidate) => isSelectable(candidate.scoring, options.minimumScore))
     .sort((a, b) => b.score - a.score)
     .slice(0, options.maxSelected);
   const selectedIds = new Set(selectedCandidates.map((candidate) => candidate.listing.id));
@@ -39,7 +39,7 @@ export function selectCandidates(
       listingId: listing.id,
       selected: true,
       score: scoring.score,
-      angles: scoring.hits.map((hit) => hit.angle),
+      angles: uniqueAngles(scoring),
       rationale: buildSelectedRationale(listing, scoring),
       createdAt
     } satisfies EditorialScore));
@@ -50,7 +50,7 @@ export function selectCandidates(
       listingId: listing.id,
       selected: false,
       score: scoring.score,
-      angles: scoring.hits.map((hit) => hit.angle),
+      angles: uniqueAngles(scoring),
       rationale: "",
       rejectionReason: buildRejectionReason(listing, scoring),
       createdAt
@@ -60,4 +60,21 @@ export function selectCandidates(
     selected,
     rejected
   };
+}
+
+function isSelectable(scoring: ReturnType<typeof scoreListing>, minimumScore: number): boolean {
+  if (scoring.score < minimumScore) {
+    return false;
+  }
+
+  const angles = new Set(scoring.hits.map((hit) => hit.angle));
+  if (angles.has("rarity") || angles.has("character") || angles.has("tradeoff")) {
+    return true;
+  }
+
+  return scoring.score >= minimumScore + 0.5 && angles.has("location_hook");
+}
+
+function uniqueAngles(scoring: ReturnType<typeof scoreListing>) {
+  return [...new Set(scoring.hits.map((hit) => hit.angle))];
 }
