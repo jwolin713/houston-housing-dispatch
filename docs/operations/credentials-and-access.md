@@ -4,7 +4,7 @@ Houston Housing Dispatch uses connected accounts for mailbox intake, enrichment,
 
 ## Credential Inventory
 
-- Gmail OAuth credentials: read HAR notification emails from the dedicated dispatch mailbox. Use read-only mailbox access where possible.
+- Gmail OAuth credentials: read HAR notification emails from the dedicated dispatch mailbox. Use the `https://www.googleapis.com/auth/gmail.readonly` scope.
 - Apify token: run the Zillow Details Scraper actor and read its dataset output.
 - Spiral access: generate or assist with newsletter draft prose. If no stable API is available, use the manual artifact workflow.
 - Substack session or API credential: create or prepare drafts only. Disable publish permission technically if Substack supports it; otherwise rely on a dedicated low-privilege account and the publication guard.
@@ -22,3 +22,7 @@ Houston Housing Dispatch uses connected accounts for mailbox intake, enrichment,
 - Use separate credentials for development and production runs when possible.
 - Default tests and dry runs must use mocks or local artifacts.
 - Real integration checks should be opt-in and documented separately from the default test suite.
+
+## Gmail Setup
+
+Create OAuth credentials for the dedicated dispatch mailbox and store the client ID, client secret, and refresh token in `.env`. The intake adapter only reads message metadata and full message bodies matched by `GMAIL_QUERY`; it does not modify, archive, label, send, or delete mail.

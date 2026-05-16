@@ -16,9 +16,26 @@ npm run dev -- dry-run --output output
 
 The dry run reads local database state, scores candidates, writes a calibration report, creates a Spiral input artifact, and writes a draft artifact. It does not touch Substack.
 
+## Gmail Intake
+
+After filling in Gmail credentials in `.env`, run:
+
+```bash
+npm run dev -- intake
+```
+
+The command scans messages matching `GMAIL_QUERY`, parses HAR listings, and stores normalized listing records in the local database.
+
+To inspect what landed:
+
+```bash
+npm run dev -- db-summary
+```
+
 ## Real Integrations
 
-- Gmail intake and Apify enrichment are adapter-backed and should be tested with mocked responses before live credentials are enabled.
+- Gmail intake uses the Gmail API with read-only OAuth credentials and scans messages matching `GMAIL_QUERY`.
+- Apify enrichment is adapter-backed and should be tested with mocked responses before live credentials are enabled.
 - Spiral and Substack support manual artifact fallbacks when direct automation is unavailable.
 - The workflow must stop at a ready-to-review draft or artifact. Direct publishing is out of scope.
 
