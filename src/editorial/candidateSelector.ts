@@ -10,6 +10,7 @@ export interface CandidateSelection {
 
 export interface CandidateSelectionOptions {
   minimumScore: number;
+  minSelected?: number;
   maxSelected: number;
   now?: Date;
 }
@@ -33,6 +34,17 @@ export function selectCandidates(
     .filter((candidate) => isSelectable(candidate.scoring, options.minimumScore))
     .sort((a, b) => b.score - a.score)
     .slice(0, options.maxSelected);
+
+  const minSelected = Math.min(options.minSelected ?? 0, options.maxSelected);
+  if (selectedCandidates.length < minSelected) {
+    const selectedIds = new Set(selectedCandidates.map((candidate) => candidate.listing.id));
+    const backups = scored
+      .filter((candidate) => !selectedIds.has(candidate.listing.id) && candidate.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, minSelected - selectedCandidates.length);
+    selectedCandidates.push(...backups);
+  }
+
   const selectedIds = new Set(selectedCandidates.map((candidate) => candidate.listing.id));
 
   const selected = selectedCandidates.map(({ listing, scoring }) => ({

@@ -19,7 +19,7 @@ export async function runDryDispatch(config: AppConfig, db: DispatchDb, outputDi
       listing,
       enrichment: enrichments.latestForListing(listing.id)?.mappedFields
     })),
-    { minimumScore: 3, maxSelected: 15 }
+    { minimumScore: 3, minSelected: 10, maxSelected: 20 }
   );
   const scores = new EditorialScoreRepository(db);
   [...selection.selected, ...selection.rejected].forEach((score) => scores.upsert(score));
