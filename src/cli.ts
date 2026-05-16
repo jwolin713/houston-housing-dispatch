@@ -5,6 +5,7 @@ import { loadConfig } from "./config/index.js";
 import { applyInitialMigration, openDatabase } from "./db/index.js";
 import { summarizeDatabase } from "./db/summary.js";
 import { GmailApiClient, type GmailClient } from "./integrations/gmail/client.js";
+import { sampleGmailMessages } from "./intake/gmailSampler.js";
 import { runIntake } from "./intake/runIntake.js";
 import { runDryDispatch } from "./workflows/dryRun.js";
 
@@ -14,6 +15,7 @@ interface CliDependencies {
   applyInitialMigration: typeof applyInitialMigration;
   runDryDispatch: typeof runDryDispatch;
   runIntake: typeof runIntake;
+  sampleGmailMessages: typeof sampleGmailMessages;
   createGmailClient(config: ReturnType<typeof loadConfig>["gmail"]): GmailClient;
   summarizeDatabase: typeof summarizeDatabase;
   writeLine(message: string): void;
@@ -25,6 +27,7 @@ const defaultDependencies: CliDependencies = {
   applyInitialMigration,
   runDryDispatch,
   runIntake,
+  sampleGmailMessages,
   createGmailClient: (config) => new GmailApiClient(config),
   summarizeDatabase,
   writeLine: (message) => console.log(message)
@@ -82,6 +85,22 @@ export function createProgram(dependencies: Partial<CliDependencies> = {}): Comm
     });
 
   program
+    .command("gmail-sample")
+    .description("Print redacted excerpts from Gmail messages matching GMAIL_QUERY")
+    .option("-l, --limit <number>", "Message sample limit", "3")
+    .option("-c, --chars <number>", "Excerpt character limit per message", "1200")
+    .action(async (options: { limit: string; chars: string }) => {
+      const config = deps.loadConfig();
+      const limit = positiveInt(options.limit, 3);
+      const excerptLength = positiveInt(options.chars, 1200);
+      const samples = await deps.sampleGmailMessages(deps.createGmailClient(config.gmail), config.gmail.query, {
+        limit,
+        excerptLength
+      });
+      deps.writeLine(JSON.stringify(samples, null, 2));
+    });
+
+  program
     .command("db-summary")
     .description("Print listing counts and recently updated listings from the local database")
     .option("-l, --limit <number>", "Recent listing limit", "10")
@@ -99,6 +118,11 @@ export function createProgram(dependencies: Partial<CliDependencies> = {}): Comm
     });
 
   return program;
+}
+
+function positiveInt(value: string, fallback: number): number {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

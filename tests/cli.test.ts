@@ -47,6 +47,7 @@ describe("createProgram", () => {
           listingsStored: 1,
           parseFailures: []
         }),
+        sampleGmailMessages: async () => [],
         writeLine: (message) => output.push(message)
       });
 
@@ -84,6 +85,7 @@ describe("createProgram", () => {
         openDatabase,
         applyInitialMigration,
         summarizeDatabase,
+        sampleGmailMessages: async () => [],
         writeLine: (message) => output.push(message)
       });
 
@@ -98,5 +100,33 @@ describe("createProgram", () => {
       }
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("prints redacted Gmail samples", async () => {
+    const output: string[] = [];
+    const program = createProgram({
+      loadConfig: () => loadConfig({ GMAIL_QUERY: "from:(har.com)" }),
+      createGmailClient: () => ({} as GmailClient),
+      sampleGmailMessages: async () => [
+        {
+          id: "msg-1",
+          subject: "HAR alert",
+          harUrls: ["https://www.har.com/homedetail/example/1"],
+          excerpt: "See https://www.har.com/homedetail/example/1"
+        }
+      ],
+      writeLine: (message) => output.push(message)
+    });
+
+    await program.parseAsync(["gmail-sample", "--limit", "1"], { from: "user" });
+
+    expect(JSON.parse(output[0])).toEqual([
+        {
+          id: "msg-1",
+          subject: "HAR alert",
+          harUrls: ["https://www.har.com/homedetail/example/1"],
+          excerpt: "See https://www.har.com/homedetail/example/1"
+        }
+    ]);
   });
 });

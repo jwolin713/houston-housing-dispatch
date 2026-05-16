@@ -9,6 +9,12 @@ describe("redact", () => {
     );
   });
 
+  it("redacts contact details", () => {
+    expect(redact("Email person@example.com or call 713-555-1212")).toBe(
+      "Email [REDACTED] or call [REDACTED]"
+    );
+  });
+
   it("redacts object JSON", () => {
     expect(redactObject({ session_token: "secret", ok: true })).toEqual({
       session_token: "[REDACTED]",
