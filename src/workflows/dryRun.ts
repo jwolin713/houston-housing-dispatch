@@ -8,7 +8,7 @@ import { ListingRepository } from "../db/listingRepository.js";
 import { selectCandidates } from "../editorial/candidateSelector.js";
 import { runIssueAssembly } from "../issues/runIssue.js";
 import { buildDraftPrompt } from "../drafting/draftPromptBuilder.js";
-import { ManualSpiralAdapter } from "../integrations/spiral/adapter.js";
+import { ManualSpiralAdapter, SpiralCliAdapter, type SpiralDraftAdapter } from "../integrations/spiral/adapter.js";
 import { writeDraftArtifact } from "../drafting/newsletterDraft.js";
 
 export async function runDryDispatch(config: AppConfig, db: DispatchDb, outputDir = "output") {
@@ -27,13 +27,14 @@ export async function runDryDispatch(config: AppConfig, db: DispatchDb, outputDi
   const issue = runIssueAssembly(config, db, outputDir);
   const allScores = scores.all();
   const prompt = buildDraftPrompt(issue, listings, allScores);
-  const spiral = new ManualSpiralAdapter(join(outputDir, `${issue.issueRun.id}-spiral-input.md`));
+  const spiralInputPath = join(outputDir, `${issue.issueRun.id}-spiral-input.md`);
+  const spiral = createSpiralAdapter(config, spiralInputPath);
   const draft = await spiral.createDraft(prompt);
   const draftPath = join(outputDir, `${issue.issueRun.id}-draft.md`);
   writeDraftArtifact(draftPath, draft);
   const updatedIssueRun = {
     ...issue.issueRun,
-    spiralArtifactPath: join(outputDir, `${issue.issueRun.id}-spiral-input.md`),
+    spiralArtifactPath: spiralInputPath,
     draftArtifactPath: draftPath,
     status: "ready_for_review" as const,
     updatedAt: new Date().toISOString()
@@ -45,7 +46,15 @@ export async function runDryDispatch(config: AppConfig, db: DispatchDb, outputDi
     selected: selection.selected.length,
     rejected: selection.rejected.length,
     calibrationReportPath: issue.reportPath,
-    spiralInputPath: join(outputDir, `${issue.issueRun.id}-spiral-input.md`),
+    spiralInputPath,
     draftPath
   };
+}
+
+function createSpiralAdapter(config: AppConfig, spiralInputPath: string): SpiralDraftAdapter {
+  if (config.spiral.draftMode === "cli") {
+    return new SpiralCliAdapter(spiralInputPath, config.spiral.generationMode);
+  }
+
+  return new ManualSpiralAdapter(spiralInputPath);
 }

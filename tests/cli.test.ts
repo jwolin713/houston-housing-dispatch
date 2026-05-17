@@ -8,6 +8,7 @@ import { applyInitialMigration, openDatabase } from "../src/db/index.js";
 import { ListingRepository } from "../src/db/listingRepository.js";
 import { summarizeDatabase } from "../src/db/summary.js";
 import type { GmailClient } from "../src/integrations/gmail/client.js";
+import type { NotificationAdapter } from "../src/notifications/notificationAdapter.js";
 import type { ListingRecord } from "../src/types/domain.js";
 
 function tempDbPath(prefix: string): { dir: string; dbPath: string } {
@@ -160,6 +161,57 @@ describe("createProgram", () => {
 
       expect(observedLimit).toBe(2);
       expect(JSON.parse(output[0])).toEqual({ attempted: 1, enriched: 1, failed: [] });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("runs the full dispatch command path without touching Substack", async () => {
+    const { dir, dbPath } = tempDbPath("dispatch-cli-run-");
+    const output: string[] = [];
+    let notificationCreated = false;
+    let observedEnrichmentLimit: number | undefined;
+    try {
+      const program = createProgram({
+        loadConfig: () =>
+          loadConfig({
+            DISPATCH_DB_PATH: dbPath,
+            APIFY_TOKEN: "token",
+            APIFY_ZILLOW_ACTOR_ID: "actor"
+          }),
+        openDatabase,
+        applyInitialMigration,
+        createGmailClient: () => ({} as GmailClient),
+        createApifyClient: () => ({ async runActor() { return []; } }),
+        createNotificationAdapter: () => {
+          notificationCreated = true;
+          return {} as NotificationAdapter;
+        },
+        runDispatch: async (_config, _db, _gmail, _enrichment, outputDir, _notifier, options) => {
+          observedEnrichmentLimit = options?.enrichmentLimit;
+          return {
+            intake: { messagesScanned: 2, listingsParsed: 1, listingsStored: 1, parseFailures: [] },
+            enrichment: { attempted: 1, enriched: 1, failed: [] },
+            dryRun: {
+              issueRunId: "run_1",
+              selected: 1,
+              rejected: 0,
+              calibrationReportPath: `${outputDir}\\dispatch\\run_1-calibration.md`,
+              spiralInputPath: `${outputDir}\\dispatch\\run_1-spiral-input.md`,
+              draftPath: `${outputDir}\\dispatch\\run_1-draft.md`
+            },
+            substackTouched: false
+          };
+        },
+        sampleGmailMessages: async () => [],
+        writeLine: (message) => output.push(message)
+      });
+
+      await program.parseAsync(["dispatch", "--output", "output", "--enrichment-limit", "20"], { from: "user" });
+
+      expect(notificationCreated).toBe(true);
+      expect(observedEnrichmentLimit).toBe(20);
+      expect(JSON.parse(output[0]).substackTouched).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

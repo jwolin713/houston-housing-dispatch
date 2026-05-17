@@ -14,8 +14,11 @@ const EnvSchema = z.object({
   APIFY_TOKEN: z.string().optional(),
   APIFY_ZILLOW_ACTOR_ID: z.string().optional(),
   SPIRAL_API_KEY: z.string().optional(),
+  SPIRAL_DRAFT_MODE: z.enum(["manual", "cli"]).default("manual"),
+  SPIRAL_GENERATION_MODE: z.enum(["instant", "interactive"]).default("instant"),
   SUBSTACK_BASE_URL: z.string().url().optional().or(z.literal("")),
   SUBSTACK_SESSION_TOKEN: z.string().optional(),
+  NOTIFICATION_WEBHOOK_URL: z.string().url().optional().or(z.literal("")),
   OPERATOR_ACCESS_TOKEN: z.string().optional()
 });
 
@@ -41,11 +44,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       zillowActorId: parsed.APIFY_ZILLOW_ACTOR_ID
     },
     spiral: {
-      apiKey: parsed.SPIRAL_API_KEY
+      apiKey: parsed.SPIRAL_API_KEY,
+      draftMode: parsed.SPIRAL_DRAFT_MODE,
+      generationMode: parsed.SPIRAL_GENERATION_MODE
     },
     substack: {
       baseUrl: parsed.SUBSTACK_BASE_URL || undefined,
       sessionToken: parsed.SUBSTACK_SESSION_TOKEN
+    },
+    notifications: {
+      webhookUrl: parsed.NOTIFICATION_WEBHOOK_URL || undefined
     },
     operatorAccessToken: parsed.OPERATOR_ACCESS_TOKEN
   };

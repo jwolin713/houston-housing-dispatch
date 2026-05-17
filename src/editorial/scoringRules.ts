@@ -40,13 +40,13 @@ export function scoreListing(input: ScoringInput): ScoringResult {
     hits.push({
       angle: "value_mismatch",
       points: 2.5,
-      note: `Unusual value signal: about $${Math.round(pricePerSqft)}/sq ft.`
+      note: "Unusual value signal: the usable space, location, and price appear meaningfully out of sync."
     });
   } else if (pricePerSqft && pricePerSqft < INNER_LOOP_PRICE_PER_SQFT_REFERENCE * MODEST_VALUE_MULTIPLIER) {
     hits.push({
       angle: "value_mismatch",
       points: 1.25,
-      note: `Modest value signal: about $${Math.round(pricePerSqft)}/sq ft.`
+      note: "Modest value signal: the pricing looks more approachable than nearby alternatives with similar utility."
     });
   }
 

@@ -11,7 +11,7 @@ describe("buildDraftPrompt", () => {
         source: "har-email",
         sourceUrl: "https://www.har.com/1",
         address: "1234 Harvard St",
-        neighborhood: "Heights",
+        neighborhood: "Stuart Terrace / Midtown",
         status: "selected",
         createdAt: "2026-05-03T00:00:00.000Z",
         updatedAt: "2026-05-03T00:00:00.000Z"
@@ -46,7 +46,15 @@ describe("buildDraftPrompt", () => {
 
     expect(prompt).toContain("no agent puffery");
     expect(prompt).toContain("Strong Heights batch");
+    expect(prompt).toContain("Issue date: 2026-05-03");
+    expect(prompt).toContain("Display neighborhood: Midtown");
+    expect(prompt).toContain("Raw HAR neighborhood/subdivision: Stuart Terrace / Midtown");
     expect(prompt).toContain("Rare lot");
+    expect(prompt).toContain("grouped by local neighborhood and sorted low-to-high by price");
+    expect(prompt).toContain("Use the Display neighborhood exactly");
+    expect(prompt).toContain("Price per square foot may appear in listing headings only");
+    expect(prompt).toContain("Do not mention builder names");
+    expect(prompt).toContain("Do not include open-house, showing-window, or tour-window information at all");
     expect(prompt).toContain("https://www.har.com/1");
   });
 });

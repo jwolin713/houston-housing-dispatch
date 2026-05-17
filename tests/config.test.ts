@@ -8,14 +8,18 @@ describe("loadConfig", () => {
       DISPATCH_NEIGHBORHOODS: "Heights, Montrose, Rice Military",
       DISPATCH_RUN_CADENCE: "twice-weekly",
       GMAIL_QUERY: "from:(har.com)",
-      SUBSTACK_BASE_URL: "https://example.substack.com"
+      SUBSTACK_BASE_URL: "https://example.substack.com",
+      NOTIFICATION_WEBHOOK_URL: "https://hooks.example.com/dispatch"
     });
 
     expect(config.dbPath).toBe("./tmp/test.sqlite");
     expect(config.neighborhoods).toEqual(["Heights", "Montrose", "Rice Military"]);
     expect(config.runCadence).toBe("twice-weekly");
     expect(config.gmail.query).toBe("from:(har.com)");
+    expect(config.spiral.draftMode).toBe("manual");
+    expect(config.spiral.generationMode).toBe("instant");
     expect(config.substack.baseUrl).toBe("https://example.substack.com");
+    expect(config.notifications.webhookUrl).toBe("https://hooks.example.com/dispatch");
   });
 
   it("allows optional integration credentials to be absent", () => {

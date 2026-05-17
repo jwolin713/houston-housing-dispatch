@@ -1,0 +1,57 @@
+name: Dispatch Draft
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 14 * * 2,5"
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DISPATCH_DB_PATH: ./data/dispatch.sqlite
+      DISPATCH_NEIGHBORHOODS: ${{ vars.DISPATCH_NEIGHBORHOODS || 'Heights,Montrose,EaDo,Midtown,Rice Military,West University,River Oaks' }}
+      DISPATCH_RUN_CADENCE: twice-weekly
+      GMAIL_QUERY: ${{ secrets.GMAIL_QUERY }}
+      GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+      GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+      GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+      APIFY_ZILLOW_ACTOR_ID: ${{ vars.APIFY_ZILLOW_ACTOR_ID || 'kawsar/affordable-zillow-details-scraper' }}
+      SPIRAL_DRAFT_MODE: cli
+      SPIRAL_GENERATION_MODE: instant
+      NOTIFICATION_WEBHOOK_URL: ${{ secrets.NOTIFICATION_WEBHOOK_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Restore dispatch database
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: dispatch-db-${{ github.run_id }}
+          restore-keys: |
+            dispatch-db-
+
+      - name: Authenticate Spiral CLI
+        run: npx @every-env/spiral-cli@latest auth login --token "$SPIRAL_API_KEY"
+        env:
+          SPIRAL_API_KEY: ${{ secrets.SPIRAL_API_KEY }}
+
+      - name: Run dispatch draft
+        run: npm run dev -- dispatch --output output --enrichment-limit 20
+
+      - name: Upload draft artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dispatch-output
+          path: output

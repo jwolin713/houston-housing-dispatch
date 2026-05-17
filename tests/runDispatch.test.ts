@@ -52,4 +52,57 @@ describe("runDispatch", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("notifies when the draft artifact is ready", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dispatch-full-run-"));
+    const db = openDatabase(join(dir, "dispatch.sqlite"));
+    const notifications: unknown[] = [];
+    try {
+      applyInitialMigration(db);
+      const gmail: GmailClient = {
+        async listMessages() {
+          return [{ id: "msg-1" }];
+        },
+        async getMessage() {
+          return {
+            id: "msg-1",
+            text: "Address: 1234 Harvard St Neighborhood: Heights Price: $650,000 3 beds 2 baths https://www.har.com/homedetail/example/1"
+          };
+        }
+      };
+      const enrichment: EnrichmentAdapter = {
+        async enrich() {
+          return {
+            payload: {},
+            mappedFields: {
+              price: 650000,
+              squareFeet: 2400,
+              lotSquareFeet: 7000,
+              beds: 3,
+              baths: 2,
+              yearBuilt: 1920
+            }
+          };
+        }
+      };
+
+      await runDispatch(
+        loadConfig({ DISPATCH_NEIGHBORHOODS: "Heights" }),
+        db,
+        gmail,
+        enrichment,
+        dir,
+        { async notifyDispatchReady(notification) { notifications.push(notification); } }
+      );
+
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({
+        selected: 1,
+        substackTouched: false
+      });
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

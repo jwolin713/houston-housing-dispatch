@@ -10,18 +10,22 @@ import { ApifyApiClient, type ApifyClient } from "./integrations/apify/client.js
 import { GmailApiClient, type GmailClient } from "./integrations/gmail/client.js";
 import { sampleGmailMessages } from "./intake/gmailSampler.js";
 import { runIntake } from "./intake/runIntake.js";
+import { WebhookNotificationAdapter, type NotificationAdapter } from "./notifications/notificationAdapter.js";
 import { runDryDispatch } from "./workflows/dryRun.js";
+import { runDispatch } from "./workflows/runDispatch.js";
 
 interface CliDependencies {
   loadConfig: typeof loadConfig;
   openDatabase: typeof openDatabase;
   applyInitialMigration: typeof applyInitialMigration;
   runDryDispatch: typeof runDryDispatch;
+  runDispatch: typeof runDispatch;
   runIntake: typeof runIntake;
   runEnrichment: typeof runEnrichment;
   sampleGmailMessages: typeof sampleGmailMessages;
   createGmailClient(config: ReturnType<typeof loadConfig>["gmail"]): GmailClient;
   createApifyClient(config: ReturnType<typeof loadConfig>["apify"]): ApifyClient;
+  createNotificationAdapter(config: ReturnType<typeof loadConfig>["notifications"]): NotificationAdapter;
   summarizeDatabase: typeof summarizeDatabase;
   writeLine(message: string): void;
 }
@@ -31,11 +35,16 @@ const defaultDependencies: CliDependencies = {
   openDatabase,
   applyInitialMigration,
   runDryDispatch,
+  runDispatch,
   runIntake,
   runEnrichment,
   sampleGmailMessages,
   createGmailClient: (config) => new GmailApiClient(config),
   createApifyClient: (config) => new ApifyApiClient(config),
+  createNotificationAdapter: (config) =>
+    config.webhookUrl
+      ? new WebhookNotificationAdapter(config.webhookUrl)
+      : { async notifyDispatchReady() { return undefined; } },
   summarizeDatabase,
   writeLine: (message) => console.log(message)
 };
@@ -70,6 +79,31 @@ export function createProgram(dependencies: Partial<CliDependencies> = {}): Comm
       try {
         deps.applyInitialMigration(db);
         const result = await deps.runDryDispatch(config, db, options.output);
+        deps.writeLine(JSON.stringify(result, null, 2));
+      } finally {
+        db.close();
+      }
+    });
+
+  program
+    .command("dispatch")
+    .description("Run intake, enrichment, Spiral drafting, and notification without touching Substack")
+    .option("-o, --output <dir>", "Output directory", "output")
+    .option("-l, --enrichment-limit <number>", "Maximum listings to enrich in this run")
+    .action(async (options: { output: string; enrichmentLimit?: string }) => {
+      const config = deps.loadConfig();
+      const db = deps.openDatabase(config.dbPath);
+      try {
+        deps.applyInitialMigration(db);
+        const result = await deps.runDispatch(
+          config,
+          db,
+          deps.createGmailClient(config.gmail),
+          new ApifyZillowEnrichmentAdapter(config.apify, deps.createApifyClient(config.apify)),
+          options.output,
+          deps.createNotificationAdapter(config.notifications),
+          { enrichmentLimit: options.enrichmentLimit ? positiveInt(options.enrichmentLimit, 1) : undefined }
+        );
         deps.writeLine(JSON.stringify(result, null, 2));
       } finally {
         db.close();

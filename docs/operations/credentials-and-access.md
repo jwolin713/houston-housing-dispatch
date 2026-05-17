@@ -6,13 +6,15 @@ Houston Housing Dispatch uses connected accounts for mailbox intake, enrichment,
 
 - Gmail OAuth credentials: read HAR notification emails from the dedicated dispatch mailbox. Use the `https://www.googleapis.com/auth/gmail.readonly` scope.
 - Apify token: run the Zillow Details Scraper actor and read its dataset output.
-- Spiral access: generate or assist with newsletter draft prose. If no stable API is available, use the manual artifact workflow.
+- Spiral access: generate or assist with newsletter draft prose. The app can use the paired Spiral CLI with `SPIRAL_DRAFT_MODE=cli`; leave the mode as `manual` to produce a handoff artifact without spending Spiral quota.
 - Substack session or API credential: create or prepare drafts only. Disable publish permission technically if Substack supports it; otherwise rely on a dedicated low-privilege account and the publication guard.
+- Notification webhook: optional POST endpoint for draft-ready alerts. Treat private webhook URLs as secrets.
 - Operator access token: optional local guard for running workflow commands.
 
 ## Logging Rules
 
 - Do not log OAuth tokens, refresh tokens, session cookies, or API keys.
+- Do not log private webhook URLs.
 - Do not log full mailbox message bodies by default.
 - Do not commit `.env` files or local SQLite databases.
 - Keep real listing fixtures sanitized if they include private mailbox metadata.
@@ -26,3 +28,16 @@ Houston Housing Dispatch uses connected accounts for mailbox intake, enrichment,
 ## Gmail Setup
 
 Create OAuth credentials for the dedicated dispatch mailbox and store the client ID, client secret, and refresh token in `.env`. The intake adapter only reads message metadata and full message bodies matched by `GMAIL_QUERY`; it does not modify, archive, label, send, or delete mail.
+
+## Spiral Setup
+
+Pair the local CLI through Spiral's Settings -> Connect an Agent flow. The pairing command stores the reusable token outside this repository for CLI use. Do not commit the token or paste it into logs.
+
+For live draft generation, set:
+
+```bash
+SPIRAL_DRAFT_MODE=cli
+SPIRAL_GENERATION_MODE=instant
+```
+
+The workflow still writes the Spiral prompt artifact for audit and fallback. Use `manual` when calibrating selection or when you do not want a run to consume Spiral quota.

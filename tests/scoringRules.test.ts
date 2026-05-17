@@ -84,7 +84,9 @@ describe("scoreListing", () => {
     });
 
     expect(score.score).toBeGreaterThanOrEqual(3);
-    expect(score.hits.find((hit) => hit.angle === "value_mismatch")?.note).toContain("Unusual value");
+    expect(score.hits.find((hit) => hit.angle === "value_mismatch")?.note).toContain(
+      "usable space, location, and price"
+    );
   });
 
   it("recognizes property-specific hooks from enriched descriptions", () => {

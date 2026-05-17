@@ -1,4 +1,5 @@
 import type { EditorialScore, ListingRecord } from "../types/domain.js";
+import { localNeighborhoodLabel } from "./localNeighborhood.js";
 
 export function buildMarketBatchSummary(listings: ListingRecord[], selectedScores: EditorialScore[]): string {
   if (selectedScores.length === 0) {
@@ -8,6 +9,7 @@ export function buildMarketBatchSummary(listings: ListingRecord[], selectedScore
   const neighborhoods = unique(
     selectedScores
       .map((score) => listings.find((listing) => listing.id === score.listingId)?.neighborhood)
+      .map(localNeighborhoodLabel)
       .filter(isString)
   );
   const angles = unique(selectedScores.flatMap((score) => score.angles));
